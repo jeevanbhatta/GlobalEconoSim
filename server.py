@@ -1,86 +1,69 @@
 # server.py
 
-from mesa.visualization import ModularServer
-from mesa.visualization.UserParam import UserSettableParameter
-from mesa.visualization.modules import ChartModule, NetworkModule
+from mesa.visualization import SolaraViz, make_space_component, make_plot_component
+from mesa.visualization.user_param import Slider
 from model import GlobalDevelopmentModel
 
-def network_portrayal(G):
+def agent_portrayal(agent):
     """
-    Provide a portrayal (visual representation) of the network and its agents.
-    G is a networkx Graph where each node is an agent's unique_id.
+    Return a portrayal dictionary for an agent.
+    For MicroAgents (which have a 'country_id'), we display a circle
+    colored by employment status. For MacroAgents, we display a rectangle.
     """
-    portrayal = dict()
-    nodes = []
-    edges = []
-    
-    for node_id in G.nodes():
-        agent = G.nodes[node_id]["agent"][0]  # Mesa typically stores agents in a list
-        if agent is not None:
-            if hasattr(agent, "country_id"):
-                # It's a MicroAgent
-                portrayal_node = {
-                    "id": node_id,
-                    "size": 5,  # smaller for micro-agents
-                    "shape": "circle",
-                    "label": f"{int(agent.resources)}",
-                    # You might color by the agent's country or employment
-                    "color": "blue" if agent.employment == "employed" else "red",
-                }
-            else:
-                # Possibly a MacroAgent (not typically visualized as nodes in this example)
-                portrayal_node = {
-                    "id": node_id,
-                    "size": 10,
-                    "shape": "rect",
-                    "label": "Macro",
-                }
-            nodes.append(portrayal_node)
+    if hasattr(agent, "country_id"):
+        # MicroAgent: Display as a circle, blue if employed, red otherwise.
+        return {
+            "Shape": "circle",
+            "Color": "blue" if agent.employment == "employed" else "red",
+            "r": 0.5,
+            "Layer": 0,
+            "Label": str(int(agent.resources)),
+        }
+    else:
+        # MacroAgent (if visualized; here we mark it as gray).
+        return {
+            "Shape": "rect",
+            "Color": "gray",
+            "w": 1,
+            "h": 1,
+            "Layer": 1,
+            "Label": "Macro",
+        }
 
-    for (source, target) in G.edges():
-        edges.append({"source": source, "target": target})
+# Create a space component to visualize the network of MicroAgents.
+network_component = make_space_component(agent_portrayal, canvas_width=500, canvas_height=500)
 
-    portrayal["nodes"] = nodes
-    portrayal["edges"] = edges
-    return portrayal
-
-
-# Create a network module that uses our portrayal
-network = NetworkModule(network_portrayal, 500, 500, library="d3")
-
-# Create chart modules for global metrics
-chart_avg_innovation = ChartModule(
+# Create plot components for global metrics.
+chart_avg_innovation = make_plot_component(
     [{"Label": "Global_Avg_Innovation", "Color": "Black"}],
-    data_collector_name='datacollector'
+    title="Average Innovation"
 )
-chart_avg_resources = ChartModule(
+chart_avg_resources = make_plot_component(
     [{"Label": "Global_Avg_Resources", "Color": "Black"}],
-    data_collector_name='datacollector'
+    title="Average Resources"
 )
-chart_employment_rate = ChartModule(
+chart_employment_rate = make_plot_component(
     [{"Label": "Global_Employment_Rate", "Color": "Black"}],
-    data_collector_name='datacollector'
+    title="Employment Rate"
 )
-chart_gini = ChartModule(
+chart_gini = make_plot_component(
     [{"Label": "Global_Gini_Resources", "Color": "Black"}],
-    data_collector_name='datacollector'
+    title="Gini Coefficient"
 )
 
-# Example: user-settable parameters
+# Define user-settable parameters using the Slider class.
 model_params = {
-    "num_countries": UserSettableParameter("slider", "Number of Countries", 3, 1, 6, 1),
-    "agents_per_country": UserSettableParameter("slider", "Agents per Country", 30, 5, 100, 5),
-    "innovation_factor": UserSettableParameter("slider", "Innovation Factor", 0.03, 0.0, 0.1, 0.01)
+    "num_countries": Slider("Number of Countries", 3, 1, 6, 1),
+    "agents_per_country": Slider("Agents per Country", 30, 5, 100, 5),
+    "innovation_factor": Slider("Innovation Factor", 0.03, 0.0, 0.1, 0.01)
 }
 
-# Construct the server
-server = ModularServer(
-    GlobalDevelopmentModel,
-    [network, chart_avg_innovation, chart_avg_resources, chart_employment_rate, chart_gini],
-    "Global Development Model",
-    model_params
-)
-server.port = 8521  # default Mesa port
+# Combine all visualization components.
+components = [network_component, chart_avg_innovation, chart_avg_resources, chart_employment_rate, chart_gini]
+
+# Create the SolaraViz instance (the new visualization server).
+viz = SolaraViz(GlobalDevelopmentModel, model_params, components, "Global Development Model")
+viz.port = 8521  # Set the port for the visualization server.
 
 if __name__ == "__main__":
-    server.launch()
+    viz.launch()

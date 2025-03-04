@@ -1,11 +1,52 @@
-# model.py
-
 import random
 import networkx as nx
+
+# Mesa core components
 from mesa import Agent, Model
 from mesa.space import NetworkGrid
-from mesa.time import RandomActivation
 from mesa.datacollection import DataCollector
+
+# --------------------------------------------------
+# CUSTOM RANDOM SCHEDULER
+# (Replacing mesa.schedule.RandomActivation)
+# --------------------------------------------------
+class SimpleRandomScheduler:
+    """
+    A scheduler that activates each agent once per step, in random order.
+    This replicates the essential functionality of mesa.schedule.RandomActivation,
+    since your Mesa version does not include the 'schedule' submodule.
+    """
+    def __init__(self, model):
+        self.model = model
+        self.steps = 0
+        self.time = 0
+        # Keep track of agents in a dict keyed by unique_id
+        self._agents = {}
+
+    def add(self, agent):
+        """
+        Add an Agent object to the schedule.
+        """
+        self._agents[agent.unique_id] = agent
+
+    def remove(self, agent):
+        """
+        Remove the specified Agent from the schedule.
+        """
+        if agent.unique_id in self._agents:
+            del self._agents[agent.unique_id]
+
+    def step(self):
+        """
+        Shuffle order and then activate each agent.
+        """
+        agent_keys = list(self._agents.keys())
+        random.shuffle(agent_keys)
+        for key in agent_keys:
+            self._agents[key].step()
+        self.steps += 1
+        self.time += 1
+
 
 # --------------------------------------------------
 # 1. MICRO-LEVEL AGENT
@@ -31,7 +72,10 @@ class MicroAgent(Agent):
         trade_propensity, 
         vulnerability
     ):
-        super().__init__(unique_id, model)
+        # According to your error, Agent requires Agent.__init__(self, model).
+        Agent.__init__(self, model)
+        self.unique_id = unique_id
+        self.model = model
         
         # Link to the macro-level (country) agent
         self.country_id = country_id
@@ -66,29 +110,27 @@ class MicroAgent(Agent):
 
     def possibly_migrate(self):
         """
-        Example heuristic: 
+        Example heuristic:
         - If agent's resources are below a threshold and 
           conflict is high in its current country, there's a chance to move.
         """
-        # Retrieve the current macro agent
         country = self.model.get_country_agent(self.country_id)
         if country is None:
             return
         
         conflict_level = country.conflict_initiation_chance  # a stand-in for 'instability'
-        # Simple migration rule
         if self.resources < 30 and random.random() < conflict_level * 0.5:
-            # Try migrating to a random different country
-            possible_countries = [m for m in self.model.macro_agents if m.unique_id != self.country_id]
+            possible_countries = [
+                m for m in self.model.macro_agents
+                if m.unique_id != self.country_id
+            ]
             if possible_countries:
                 new_country = random.choice(possible_countries)
                 self.country_id = new_country.unique_id
-                # A real model might also remove the agent from old country's node 
-                # and place it in new country's node or region.
 
     def update_employment(self):
         """
-        Probability of gaining or losing employment. 
+        Probability of gaining or losing employment.
         Influenced by education and country-level policy.
         """
         country = self.model.get_country_agent(self.country_id)
@@ -96,7 +138,6 @@ class MicroAgent(Agent):
             return
         
         base_prob = 0.1 + 0.4 * self.education
-        # Country's policy can boost (or reduce) job-finding rates
         base_prob += country.employment_policy_boost
         
         if self.employment == "unemployed":
@@ -109,7 +150,7 @@ class MicroAgent(Agent):
 
     def make_economic_decision(self):
         """
-        Decide how to allocate resources. 
+        Decide how to allocate resources.
         Might invest in innovation, education, or attempt trade/cooperation.
         """
         if self.resources > 50:
@@ -126,8 +167,9 @@ class MicroAgent(Agent):
             self.resources -= investment
             country = self.model.get_country_agent(self.country_id)
             rd_policy = country.rd_policy_boost if country else 0.0
-            # innovation boost depends on agent's education, plus any country R&D support
-            self.innovation += investment * self.model.innovation_factor * (1.0 + self.education + rd_policy)
+            self.innovation += investment * self.model.innovation_factor * (
+                1.0 + self.education + rd_policy
+            )
 
     def improve_education(self):
         cost = 8
@@ -135,7 +177,6 @@ class MicroAgent(Agent):
             self.resources -= cost
             country = self.model.get_country_agent(self.country_id)
             edu_subsidy = country.education_subsidy if country else 0.0
-            # Education can increase by a step
             self.education += 0.05 * (1.0 + edu_subsidy)
             self.education = min(self.education, 1.0)
 
@@ -157,17 +198,17 @@ class MicroAgent(Agent):
          - Potentially exchange innovation
         """
         trade_amount = 5
-        if (self.resources >= trade_amount and 
+        if (
+            self.resources >= trade_amount and
             partner.resources >= trade_amount and
-            random.random() < partner.trade_propensity):
-            
+            random.random() < partner.trade_propensity
+        ):
             self.resources -= trade_amount
             partner.resources -= trade_amount
             synergy_gain = 8
             self.resources += synergy_gain / 2
             partner.resources += synergy_gain / 2
             
-            # Share innovation partially
             diff = partner.innovation - self.innovation
             self.innovation += diff * 0.05
             partner.innovation -= diff * 0.05
@@ -176,9 +217,10 @@ class MicroAgent(Agent):
         """
         Agents cooperate: share some resources, average out innovation.
         """
-        if (random.random() < self.cooperation and 
-            random.random() < partner.cooperation):
-            
+        if (
+            random.random() < self.cooperation and
+            random.random() < partner.cooperation
+        ):
             resource_transfer = 3
             if self.resources > resource_transfer:
                 self.resources -= resource_transfer
@@ -208,18 +250,16 @@ class MacroAgent(Agent):
         conflict_initiation_chance, 
         tax_rate
     ):
-        super().__init__(unique_id, model)
+        # Agent requires Agent.__init__(self, model).
+        Agent.__init__(self, model)
+        self.unique_id = unique_id
+        self.model = model
         
         self.name = name
-        # Economic policies
         self.employment_policy_boost = employment_policy_boost
         self.education_subsidy = education_subsidy
         self.rd_policy_boost = rd_policy_boost
-        
-        # Conflict
         self.conflict_initiation_chance = conflict_initiation_chance
-        
-        # Fiscal policy
         self.tax_rate = tax_rate  # e.g., 0.0 to 0.5
 
     def step(self):
@@ -253,25 +293,21 @@ class MacroAgent(Agent):
 
     def apply_taxes_and_subsidies(self):
         """
-        Simple model: 
+        Simple model:
          - Collect a fraction of each agent's resources as tax.
-         - Redistribute total as direct subsidy to micro agents, 
-           possibly weighted by unemployment or some other rule.
+         - Redistribute total as direct subsidy to micro agents.
         """
         micro_agents = self.model.get_micro_agents_in_country(self.unique_id)
         if not micro_agents:
             return
         
-        # 1. Collect taxes
         total_taxes = 0
         for agent in micro_agents:
             tax = agent.resources * self.tax_rate
             agent.resources -= tax
             total_taxes += tax
         
-        # 2. Redistribute (e.g., equally or to unemployed)
         if total_taxes > 0:
-            # For demonstration, distribute equally
             subsidy_per_agent = total_taxes / len(micro_agents)
             for agent in micro_agents:
                 agent.resources += subsidy_per_agent
@@ -282,7 +318,7 @@ class MacroAgent(Agent):
 # --------------------------------------------------
 class GlobalDevelopmentModel(Model):
     """
-    Contains both macro (country) agents and micro (individual) agents. 
+    Contains both macro (country) agents and micro (individual) agents.
     Sets up the network environment, runs the scheduler, and collects data.
     """
     def __init__(
@@ -297,7 +333,11 @@ class GlobalDevelopmentModel(Model):
         self.agents_per_country = agents_per_country
         self.innovation_factor = innovation_factor
         
-        self.schedule = RandomActivation(self)
+        # A custom counter for generating unique IDs (since next_id isn't available).
+        self.current_id = 0
+        
+        # REPLACE the Mesa scheduler with our custom scheduler
+        self.schedule = SimpleRandomScheduler(self)
         
         # Network for micro-level interactions
         self.G = nx.Graph()
@@ -307,8 +347,6 @@ class GlobalDevelopmentModel(Model):
         self.macro_agents = []
         for c_id in range(num_countries):
             name = f"Country-{c_id}"
-            
-            # Example random policy parameters
             emp_boost = random.uniform(0.0, 0.3)
             edu_subsidy = random.uniform(0.0, 0.3)
             rd_boost = random.uniform(0.0, 0.2)
@@ -373,12 +411,18 @@ class GlobalDevelopmentModel(Model):
             }
         )
 
+    def next_id(self):
+        """
+        Increment and return a unique integer ID for agents.
+        """
+        self.current_id += 1
+        return self.current_id
+
     def connect_agents(self):
         """
         Simple function to create edges among micro agents, primarily within each country,
         plus some cross-country links.
         """
-        # Group micro agents by country
         from collections import defaultdict
         country_groups = defaultdict(list)
         for ma in self.micro_agents:
@@ -476,7 +520,6 @@ if __name__ == "__main__":
     for step in range(100):
         model.step()
 
-    # Print final data
     df_model = model.datacollector.get_model_vars_dataframe()
     print("Global Indicators (last 5 steps):\n", df_model.tail())
     
