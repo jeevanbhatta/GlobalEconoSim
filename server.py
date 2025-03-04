@@ -1,6 +1,6 @@
 # server.py
 
-from mesa.visualization.ModularVisualization import ModularServer
+from mesa.visualization import ModularServer
 from mesa.visualization.UserParam import UserSettableParameter
 from mesa.visualization.modules import ChartModule, NetworkModule
 from model import GlobalDevelopmentModel

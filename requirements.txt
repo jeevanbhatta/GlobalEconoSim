@@ -1,0 +1,5 @@
+mesa>=1.10.0
+networkx>=2.5
+matplotlib>=3.3.2
+altair
+solara
