@@ -1,40 +1,119 @@
 ## GlobalEconoSim
 
-1. **MicroAgents (Individuals or Households)**  
-   - **Attributes**: Education, employment, resources (wealth), innovation, vulnerability to conflict, demographic factors (gender, race), etc.  
-   - **Behaviors**:  
-     - Invest in R&D or education  
-     - Trade or cooperate with neighbors  
-     - Possibly migrate if conflict is high or resources are too low  
+A simulation of global economic development that models both **MicroAgents** (individuals/households) and **MacroAgents** (countries/regions). Each step, agents make decisions, interact, and update their states. The simulation tracks key indicators over time (e.g., average resources, Gini coefficient).
 
-2. **MacroAgents (Countries or Regions)**  
-   - **Attributes**: Policy levers (tax rates, subsidies, R&D support), conflict tendencies, name/identifier, etc.  
-   - **Behaviors**:  
-     - Apply taxes and redistribute as subsidies  
-     - Initiate or manage conflict  
-     - Potentially sign alliances or trade deals (extension idea)
+---
 
-3. **GlobalDevelopmentModel**  
-   - Creates both macro- and micro-level agents.  
-   - Sets up a **network** or **graph** structure for micro-level interactions.  
-   - Each step: 
-     1. MacroAgents apply policies, possibly trigger conflict.  
-     2. MicroAgents then update employment, invest or trade, possibly migrate.  
-   - Collects data on global and country-level indicators (e.g., average resources, Gini index).  
+### 1. MicroAgents (Individuals or Households)
 
-4. **Visualization**  
-   - **Network Visualization**: Each MicroAgent is a node in a network. MacroAgents can be displayed as separate nodes or abstracted.  
-   - **Charts**: Track time series of global indicators such as average innovation, average resources, employment rate, and Gini coefficient.  
-   - **Interactive Controls** (optional advanced usage): Let the user set certain parameters (e.g., number of steps, tax rate) at runtime in the Mesa GUI.
+- **Core Attributes**:
+  - **Education**: Ranges from 0 to 1 (continuous measure).
+  - **Employment**: "employed" or "unemployed."
+  - **Resources**: Numerical wealth or savings.
+  - **Innovation**: Measure of innovative capacity or IP.
+  - **Vulnerability**: How strongly conflicts/shocks affect this agent.
+  - **Demographics**: **Gender**, **race**, **age**, **skill_level**, **health_condition**, etc.
 
-Below are **two Python files**:  
-- **`model.py`**: Contains all agent classes and the main model logic.  
-- **`server.py`**: Sets up the Mesa interactive server, including a **network visualization** and a set of **chart modules** to track key metrics in real time.
+- **Behaviors**:
+  1. **Migrate** if resources are too low and conflict risk is high.
+  2. **Update Employment**: Seek or lose jobs based on education, skill level, and country policies.
+  3. **Make Economic Decisions**:
+     - **Invest in R&D** (innovation) or **improve education**, if resources allow.
+     - **Trade or Cooperate** with neighboring agents in the network.
+     - **Consume** daily resources (simple consumption model).
 
-> **Instructions**  
-> 1. In a terminal, run:  
->    ```bash
->    pip install mesa networkx
->    python server.py
->    ```  
-> 2. Open the provided local URL (usually [http://127.0.0.1:8521](http://127.0.0.1:8521)) in your browser to see and interact with the simulation.
+---
+
+### 2. MacroAgents (Countries or Regions)
+
+- **Core Attributes**:
+  - **Name/ID**: Unique identifier (e.g., "Country-0").
+  - **Policy Levers**:
+    - **Tax Rate**  
+    - **Employment Policy Boost**  
+    - **Education Subsidy**  
+    - **R&D Policy Boost**
+  - **Conflict Parameters**: Probability of triggering conflict, which reduces micro agents’ resources.
+  - **GDP**, **inflation_rate**, **currency_exchange_rate**, **environment_policy**, **trade_policy** (basic placeholders to demonstrate macroeconomic factors).
+
+- **Behaviors**:
+  1. **Initiate Conflict**: With some probability, conflict breaks out and harms local agents’ resources.
+  2. **Taxes & Subsidies**: Collect a fraction of each MicroAgent’s resources, then redistribute as subsidies.
+  3. **Update Macro Indicators**: Simple random fluctuations in GDP, inflation, etc., to simulate macroeconomic dynamics.
+
+---
+
+### 3. GlobalDevelopmentModel
+
+- **Initialization**:
+  1. Creates `num_countries` **MacroAgents** with random policy parameters.
+  2. For each MacroAgent, creates `agents_per_country` **MicroAgents** with random demographics (gender, race, age, etc.) and random initial resources.
+  3. Builds a **network graph** (`networkx.Graph`) connecting MicroAgents. Also allows random cross-country connections.
+
+- **Step Flow**:
+  1. **MacroAgents** act first:
+     - Possibly initiate conflict.
+     - Collect taxes, redistribute subsidies.
+     - Update macro indicators (GDP, inflation, etc.).
+  2. **MicroAgents** act:
+     - Possibly migrate if conditions are poor.
+     - Update or lose employment based on skill level, education, and policy.
+     - Make economic decisions: invest in innovation or education, or trade/cooperate with neighbors.
+  
+- **Data Collection**:
+  - **Model-Level**: Average innovation, average resources, global employment rate, Gini coefficient.  
+  - **Agent-Level**: Macro agent attributes (GDP, inflation, tax rate, etc.) and Micro agent attributes (gender, race, skill, health, resources, etc.).
+
+---
+
+### 4. Visualization
+
+Depending on your environment and Mesa version, you can visualize:
+1. **Network Diagram** of MicroAgents (often circles) and optional MacroAgents (squares).  
+2. **Charts** for global indicators:  
+   - Average Innovation  
+   - Average Resources  
+   - Employment Rate  
+   - Gini Coefficient  
+
+---
+
+### 5. Usage
+
+Below are two Python files:
+
+- **`model.py`**  
+  Contains all the agent classes (`MicroAgent`, `MacroAgent`) plus the main `GlobalDevelopmentModel` logic.
+
+- **`server.py`**  
+  Sets up an **interactive** interface for the model. Depending on your Mesa version:  
+  - You might use **`ModularServer`** to show a built-in Mesa interface.  
+  - Or you can adopt **Streamlit**/**PyVis** for a custom UI.
+
+#### Running the Model (No Visualization)
+
+1. In a terminal:
+   ```bash
+   python model.py
+   ```
+   This will run the model for a fixed number of steps and print out final stats.
+
+#### Interactive Visualization (Example Using Mesa’s ModularServer)
+
+```bash
+pip install -r requirements.txt
+python streamlit_server.py
+```
+Then open the printed URL (by default `http://127.0.0.1:8521`) to see the network diagram and real-time charts.  
+
+> **Note**: If your Mesa version doesn’t include `ModularVisualization`, you can run a custom **Streamlit** app or use any other visualization approach.
+
+---
+
+### 6. Extending the Simulation
+
+- **Country Alliances**: Model alliances or trade deals between MacroAgents.  
+- **Health/Education Shocks**: E.g., pandemics reducing productivity or innovation.  
+- **Environmental Policy**: Let environment_policy reduce conflicts or daily consumption over time.  
+
+With **GlobalEconoSim**, you can flexibly explore how micro-level behaviors (consumption, skill, migration) and macro-level policies (tax, conflict, R&D) interplay to shape development outcomes.
