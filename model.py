@@ -6,9 +6,9 @@ from mesa import Agent, Model
 from mesa.space import NetworkGrid
 from mesa.datacollection import DataCollector
 
+
 # --------------------------------------------------
-# CUSTOM RANDOM SCHEDULER
-# (Replacing mesa.schedule.RandomActivation)
+# CUSTOM RANDOM SCHEDULER (Replacing mesa.schedule.RandomActivation)
 # --------------------------------------------------
 class SimpleRandomScheduler:
     """
@@ -56,23 +56,38 @@ class MicroAgent(Agent):
     Represents an individual/household within a country (MacroAgent).
     Includes mechanics for employment, resource accumulation, R&D,
     migration, etc.
+    
+    Additional Demographic Attributes (examples):
+    - age
+    - skill_level
+    - marital_status
+    - household_size
+    - health_condition
+    - daily_consumption
     """
     def __init__(
-        self, 
-        unique_id, 
-        model, 
+        self,
+        unique_id,
+        model,
         country_id,
-        gender, 
-        race, 
-        education, 
-        employment, 
-        resources, 
-        innovation, 
-        cooperation, 
-        trade_propensity, 
-        vulnerability
+        gender,
+        race,
+        education,
+        employment,
+        resources,
+        innovation,
+        cooperation,
+        trade_propensity,
+        vulnerability,
+        # New demographic attributes:
+        age=None,
+        skill_level=None,
+        marital_status=None,
+        household_size=None,
+        health_condition=None,
+        daily_consumption=None
     ):
-        # According to your error, Agent requires Agent.__init__(self, model).
+        # According to your environment, Agent requires Agent.__init__(self, model).
         Agent.__init__(self, model)
         self.unique_id = unique_id
         self.model = model
@@ -83,6 +98,12 @@ class MicroAgent(Agent):
         # Demographics
         self.gender = gender
         self.race = race
+        self.age = age if age is not None else random.randint(18, 60)
+        self.skill_level = skill_level if skill_level is not None else random.uniform(0.0, 1.0)
+        self.marital_status = marital_status if marital_status is not None else random.choice(["single", "married"])
+        self.household_size = household_size if household_size is not None else random.randint(1, 5)
+        self.health_condition = health_condition if health_condition is not None else random.choice(["good", "fair", "poor"])
+        self.daily_consumption = daily_consumption if daily_consumption is not None else random.uniform(1.0, 5.0)
         
         # Human capital & employment
         self.education = education
@@ -131,13 +152,14 @@ class MicroAgent(Agent):
     def update_employment(self):
         """
         Probability of gaining or losing employment.
-        Influenced by education and country-level policy.
+        Influenced by education, skill_level, and country-level policy.
         """
         country = self.model.get_country_agent(self.country_id)
         if not country:
             return
         
-        base_prob = 0.1 + 0.4 * self.education
+        # Include skill level in probability of employment
+        base_prob = 0.1 + 0.4 * self.education + 0.2 * self.skill_level
         base_prob += country.employment_policy_boost
         
         if self.employment == "unemployed":
@@ -153,6 +175,11 @@ class MicroAgent(Agent):
         Decide how to allocate resources.
         Might invest in innovation, education, or attempt trade/cooperation.
         """
+        # Subtract daily consumption from resources (simple consumption model).
+        self.resources -= self.daily_consumption
+        if self.resources < 0:
+            self.resources = 0
+        
         if self.resources > 50:
             if random.random() < 0.5:
                 self.invest_in_innovation()
@@ -168,7 +195,7 @@ class MicroAgent(Agent):
             country = self.model.get_country_agent(self.country_id)
             rd_policy = country.rd_policy_boost if country else 0.0
             self.innovation += investment * self.model.innovation_factor * (
-                1.0 + self.education + rd_policy
+                1.0 + self.education + rd_policy + 0.5 * self.skill_level
             )
 
     def improve_education(self):
@@ -238,17 +265,30 @@ class MacroAgent(Agent):
     """
     Represents a country or region. Holds policy levers like 
     tax rates, R&D support, conflict parameters, etc.
+    
+    Additional Macro Attributes (examples):
+    - gdp
+    - inflation_rate
+    - currency_exchange_rate
+    - environment_policy
+    - trade_policy
     """
     def __init__(
-        self, 
-        unique_id, 
-        model, 
+        self,
+        unique_id,
+        model,
         name,
-        employment_policy_boost, 
-        education_subsidy, 
-        rd_policy_boost, 
-        conflict_initiation_chance, 
-        tax_rate
+        employment_policy_boost,
+        education_subsidy,
+        rd_policy_boost,
+        conflict_initiation_chance,
+        tax_rate,
+        # New macro factors
+        gdp=None,
+        inflation_rate=None,
+        currency_exchange_rate=None,
+        environment_policy=None,
+        trade_policy=None
     ):
         # Agent requires Agent.__init__(self, model).
         Agent.__init__(self, model)
@@ -262,14 +302,24 @@ class MacroAgent(Agent):
         self.conflict_initiation_chance = conflict_initiation_chance
         self.tax_rate = tax_rate  # e.g., 0.0 to 0.5
 
+        # Additional macro-level attributes (basic initialization).
+        # These could be updated during step() if you want to model them more dynamically.
+        self.gdp = gdp if gdp is not None else random.uniform(1e4, 1e5)
+        self.inflation_rate = inflation_rate if inflation_rate is not None else random.uniform(0.0, 0.1)
+        self.currency_exchange_rate = currency_exchange_rate if currency_exchange_rate is not None else random.uniform(0.5, 1.5)
+        self.environment_policy = environment_policy if environment_policy is not None else random.uniform(0.0, 1.0)
+        self.trade_policy = trade_policy if trade_policy is not None else random.uniform(0.0, 1.0)
+
     def step(self):
         """
         Each step:
           1. Possibly initiate conflict
           2. Apply taxes and redistribute (subsidies) to micro agents
+          3. (Optional) Update macro attributes like GDP, inflation, etc.
         """
         self.possibly_initiate_conflict()
         self.apply_taxes_and_subsidies()
+        self.update_macro_indicators()
 
     def possibly_initiate_conflict(self):
         """
@@ -311,6 +361,16 @@ class MacroAgent(Agent):
             subsidy_per_agent = total_taxes / len(micro_agents)
             for agent in micro_agents:
                 agent.resources += subsidy_per_agent
+
+    def update_macro_indicators(self):
+        """
+        Placeholder function to update or model changes in GDP, inflation, etc.
+        For now, we do minor random fluctuations to illustrate the concept.
+        """
+        # Example: random fluctuation in GDP, inflation, exchange rate
+        self.gdp += random.uniform(-100, 100)
+        self.inflation_rate = max(0.0, self.inflation_rate + random.uniform(-0.01, 0.01))
+        self.currency_exchange_rate = max(0.1, self.currency_exchange_rate + random.uniform(-0.05, 0.05))
 
 
 # --------------------------------------------------
@@ -361,7 +421,8 @@ class GlobalDevelopmentModel(Model):
                 education_subsidy=edu_subsidy,
                 rd_policy_boost=rd_boost,
                 conflict_initiation_chance=conflict_chance,
-                tax_rate=tax_rate
+                tax_rate=tax_rate,
+                # optional new macro fields can also be passed in here if desired
             )
             self.schedule.add(macro_agent)
             self.macro_agents.append(macro_agent)
@@ -374,15 +435,16 @@ class GlobalDevelopmentModel(Model):
                     unique_id=self.next_id(),
                     model=self,
                     country_id=macro_agent.unique_id,
-                    gender=random.choice(["male", "female"]),
-                    race=random.choice(["GroupA", "GroupB"]),
+                    gender=random.choice(["male", "female", "non-binary"]),
+                    race=random.choice(["GroupA", "GroupB", "GroupC"]),
                     education=random.uniform(0, 1),
                     employment=random.choice(["employed", "unemployed"]),
                     resources=random.randint(50, 150),
                     innovation=random.uniform(0, 0.5),
                     cooperation=random.uniform(0.3, 0.7),
                     trade_propensity=random.uniform(0.2, 0.6),
-                    vulnerability=random.uniform(0.1, 0.3)
+                    vulnerability=random.uniform(0.1, 0.3),
+                    # new demographic fields can also be passed in here if desired
                 )
                 self.schedule.add(micro_agent)
                 self.micro_agents.append(micro_agent)
@@ -400,14 +462,24 @@ class GlobalDevelopmentModel(Model):
                 "Global_Gini_Resources": self.compute_global_gini_resources
             },
             agent_reporters={
-                # Macro-level
+                # Macro-level (existing + new)
                 "Macro_Name": lambda a: a.name if isinstance(a, MacroAgent) else None,
                 "Macro_TaxRate": lambda a: a.tax_rate if isinstance(a, MacroAgent) else None,
-                # Micro-level
+                "Macro_GDP": lambda a: a.gdp if isinstance(a, MacroAgent) else None,
+                "Macro_InflationRate": lambda a: a.inflation_rate if isinstance(a, MacroAgent) else None,
+                # Micro-level (existing + new)
                 "Micro_CountryID": lambda a: a.country_id if isinstance(a, MicroAgent) else None,
                 "Micro_Resources": lambda a: a.resources if isinstance(a, MicroAgent) else None,
                 "Micro_Innovation": lambda a: a.innovation if isinstance(a, MicroAgent) else None,
                 "Micro_Education": lambda a: a.education if isinstance(a, MicroAgent) else None,
+                "Micro_Gender": lambda a: a.gender if isinstance(a, MicroAgent) else None,
+                "Micro_Race": lambda a: a.race if isinstance(a, MicroAgent) else None,
+                "Micro_Age": lambda a: a.age if isinstance(a, MicroAgent) else None,
+                "Micro_SkillLevel": lambda a: a.skill_level if isinstance(a, MicroAgent) else None,
+                "Micro_MaritalStatus": lambda a: a.marital_status if isinstance(a, MicroAgent) else None,
+                "Micro_HouseholdSize": lambda a: a.household_size if isinstance(a, MicroAgent) else None,
+                "Micro_HealthCondition": lambda a: a.health_condition if isinstance(a, MicroAgent) else None,
+                "Micro_DailyConsumption": lambda a: a.daily_consumption if isinstance(a, MicroAgent) else None,
             }
         )
 
