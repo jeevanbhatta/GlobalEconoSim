@@ -25,6 +25,14 @@ except ImportError:
 from model import Country, TradeNetwork, simulate
 from analytics import mfa_series, parameter_sensitivity_analysis
 from visualization import plot_network, plot_histogram, plot_scatter, plot_line
+# Import functions from trade_stats for country analysis
+from trade_stats import (
+    get_top_gdp_countries, get_bottom_gdp_countries,
+    get_top_connected_countries, get_least_connected_countries,
+    get_trade_efficiency_countries, get_growth_rate_countries,
+    calculate_gdp_tariff_correlation, calculate_gdp_connections_correlation,
+    get_shock_country_comparison
+)
 
 """
 Interactive Global Trade Simulation with MFA Contrast
@@ -61,6 +69,7 @@ streamlit run trade_app.py
 2. **Interactive Network Graph** – live Plotly rendering of the trade web, node colours = political bloc, edge width = trade flow.
 3. **Political/​Friendship Blocs** – pick `k` blocs; intra‑bloc tariffs & link probabilities differ from inter‑bloc values. A slider controls the intra‑vs‑inter tariff gap so you can see when the world fractures into components.
 4. **Two‑Good World (A & B)** – each country draws random productivity for each good; gravity flows run per good and aggregate into GDP.
+5. **Best & Worst Performers** - Compare top and bottom countries across different metrics like GDP, connectivity, trade efficiency and growth rate.
 """
 
 # -------------------------------------------------------------
@@ -161,6 +170,79 @@ def main():
             # network viz
             st.subheader("Trade Network (edge width = flow, node colour = bloc)")
             st.plotly_chart(plot_network(net), use_container_width=True)
+            
+            # Display top and bottom countries by GDP and trade connections
+            st.subheader("Country Analysis")
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Top and bottom countries by GDP
+                st.write("**Top 5 Countries by GDP**")
+                top_gdp_countries = get_top_gdp_countries(net, 5)
+                st.dataframe(pd.DataFrame(top_gdp_countries), hide_index=True)
+                
+                st.write("**Bottom 5 Countries by GDP**")
+                bottom_gdp_countries = get_bottom_gdp_countries(net, 5)
+                st.dataframe(pd.DataFrame(bottom_gdp_countries), hide_index=True)
+                
+                # GDP and tariff correlation
+                gdp_tariff_corr = calculate_gdp_tariff_correlation(net)
+                st.write(f"**Correlation between GDP and avg tariff: {gdp_tariff_corr:.3f}**")
+                if gdp_tariff_corr < -0.3:
+                    st.write("📉 Lower tariffs are associated with higher GDP in this simulation")
+                elif gdp_tariff_corr > 0.3:
+                    st.write("📈 Higher tariffs are associated with higher GDP in this simulation")
+                else:
+                    st.write("🔄 No strong relationship between tariffs and GDP in this simulation")
+            
+            with col2:
+                # Top and least connected countries
+                st.write("**Top 5 Countries by Trade Connections**")
+                top_connected_countries = get_top_connected_countries(net, 5)
+                st.dataframe(pd.DataFrame(top_connected_countries), hide_index=True)
+                
+                st.write("**Least 5 Connected Countries**")
+                least_connected_countries = get_least_connected_countries(net, 5)
+                st.dataframe(pd.DataFrame(least_connected_countries), hide_index=True)
+                
+                # Connections and GDP correlation
+                gdp_connections_corr = calculate_gdp_connections_correlation(net)
+                st.write(f"**Correlation between connections and GDP: {gdp_connections_corr:.3f}**")
+                if gdp_connections_corr > 0.5:
+                    st.write("🔗 More trade connections strongly correlate with higher GDP")
+                elif gdp_connections_corr > 0.2:
+                    st.write("🔗 More trade connections moderately correlate with higher GDP")
+                else:
+                    st.write("🔄 No strong relationship between connections and GDP")
+            
+            # Calculate and display top countries by trade efficiency
+            st.subheader("Trade Efficiency Analysis")
+            trade_efficiency_countries = get_trade_efficiency_countries(net, 5)
+            st.write("**Top 5 Countries by Trade Efficiency**")
+            st.dataframe(pd.DataFrame(trade_efficiency_countries), hide_index=True)
+            
+            st.write("**Bottom 5 Countries by Trade Efficiency**")
+            least_trade_efficiency_countries = get_trade_efficiency_countries(net, 5, reverse=True)
+            st.dataframe(pd.DataFrame(least_trade_efficiency_countries), hide_index=True)
+            
+            st.write("""
+            **Note:** Trade Efficiency measures how much trade a country conducts relative to its GDP.
+            Higher values indicate countries that are more integrated into the global economy and
+            may be benefiting more from trade relative to their economic size.
+            """)
+            
+            # Display shock country comparison to mean/median values
+            st.subheader("Shock Country Analysis")
+            st.write(f"**Country {shock_id} (Shock Country) Statistics Compared to Mean/Median**")
+            shock_comparison = get_shock_country_comparison(net, shock_id)
+            st.dataframe(shock_comparison[["Metric", "Shock Value", "Mean Value", "Median Value", "% Diff Value"]], hide_index=True)
+            
+            st.write("""
+            **Note:** This comparison shows how the country that received the policy shock compares to 
+            the mean and median values across all countries. Positive percentage differences indicate 
+            the shock country is performing better than average, while negative values indicate worse 
+            performance.
+            """)
 
             # Community detection on final trade network
             st.subheader("Trade Communities (Final State)")
@@ -201,10 +283,47 @@ def main():
         This helps identify critical thresholds and non-linear effects in the trade network.
         """)
         
+        # Add explanation for error bars and replicates
+        with st.expander("ℹ️ About Sensitivity Analysis & Error Bars", expanded=False):
+            st.markdown("""
+            ### Understanding the Analysis
+            
+            This tab runs multiple simulations while varying just one parameter value at a time,
+            keeping all other parameters fixed. This approach reveals how sensitive outcomes are
+            to changes in each parameter.
+            
+            ### About Error Bars & Replicates
+            
+            **Error bars** show the standard deviation across multiple simulation runs with identical 
+            parameters but different random seeds. Larger error bars indicate:
+            
+            - Higher variability in outcomes
+            - Less predictable system behavior
+            - Potential chaotic dynamics at certain parameter values
+            
+            **Replicates** are multiple identical simulations that differ only in their random initialization.
+            More replicates provide:
+            
+            - Greater confidence in results
+            - Better understanding of inherent system variability
+            - Ability to identify truly stable parameter regions
+            
+            The **coefficient of variation** (CV) shown in the Equilibrium Assessment measures the relative 
+            variability between replicates. A low CV suggests the system reached equilibrium.
+            """)
+        
         # Parameter selection
         param_name = st.selectbox(
             "Parameter to vary", 
-            ["tariff_gap", "n", "blocs", "conn_intra", "conn_inter", "tariff_sd"]
+            ["tariff_gap", "n", "blocs", "conn_intra", "conn_inter", "tariff_sd"],
+            format_func=lambda x: {
+                "tariff_gap": "Tariff Gap (inter-bloc vs intra-bloc)",
+                "n": "Number of Countries",
+                "blocs": "Number of Political Blocs",
+                "conn_intra": "Intra-bloc Connectivity",
+                "conn_inter": "Inter-bloc Connectivity",
+                "tariff_sd": "Tariff Standard Deviation"
+            }.get(x, x)
         )
         
         # Target metric selection
@@ -249,55 +368,162 @@ def main():
         }
         
         # Add replicates option for robustness
-        num_replicates = st.slider("Number of simulation replicates", 1, 10, 3)
+        num_replicates = st.slider("Number of simulation replicates", 1, 10, 3, 
+                                  help="More replicates give more reliable results but take longer to compute")
         
         # Run analysis button
         if st.button("Run Sensitivity Analysis", key="run_sens_analysis"):
-            results_df = parameter_sensitivity_analysis(
-                param_name, param_range, fixed_params, target_metric, steps, num_replicates
-            )
-            
-            # Line chart with error bars for final values
-            st.subheader(f"Effect of {param_name} on {target_metric}")
-            
-            # Plot with error bars using Plotly
-            fig = plot_line(
-                results_df, 
-                x="param_value", 
-                y="final_value",
-                error_y="final_value_std",
-                markers=True,
-                title=f"Final {target_metric} vs {param_name} (with {num_replicates} replicates)"
-            )
-            st.plotly_chart(fig, use_container_width=True)
-            
-            # Bar chart of growth rates (if applicable)
-            if target_metric in ["world_gdp", "poverty", "trade_volume"]:
-                fig2 = px.bar(
+            with st.spinner(f"Running sensitivity analysis for {param_name}..."):
+                results_df = parameter_sensitivity_analysis(
+                    param_name, param_range, fixed_params, target_metric, steps, num_replicates
+                )
+                
+                # Get display-friendly parameter name
+                param_display_name = {
+                    "tariff_gap": "Tariff Gap",
+                    "n": "Number of Countries",
+                    "blocs": "Number of Political Blocs",
+                    "conn_intra": "Intra-bloc Connectivity",
+                    "conn_inter": "Inter-bloc Connectivity",
+                    "tariff_sd": "Tariff Standard Deviation"
+                }.get(param_name, param_name.replace('_', ' ').title())
+                
+                # Get display-friendly metric name
+                metric_display_name = {
+                    "world_gdp": "World GDP",
+                    "poverty": "Poverty Rate",
+                    "trade_volume": "Trade Volume", 
+                    "fragmentation": "Network Fragmentation",
+                    "gini": "Gini Coefficient"
+                }.get(target_metric, target_metric.replace('_', ' ').title())
+                
+                # Line chart with error bars for final values
+                st.subheader(f"Effect of {param_display_name} on {metric_display_name}")
+                
+                # Plot with error bars using Plotly
+                fig = plot_line(
                     results_df, 
                     x="param_value", 
-                    y="growth_rate",
-                    error_y="growth_rate_std",
-                    title=f"{target_metric} Growth Rate vs {param_name}"
+                    y="final_value",
+                    error_y="final_value_std",
+                    markers=True,
+                    title=f"{metric_display_name} vs {param_display_name}"
                 )
-                st.plotly_chart(fig2, use_container_width=True)
-            
-            # Equilibrium assessment
-            if num_replicates > 1:
-                st.subheader("Equilibrium Assessment")
-                cv = results_df["final_value_std"] / results_df["final_value"] * 100  # coefficient of variation
-                st.write(f"Average coefficient of variation across parameter values: {np.mean(cv):.2f}%")
                 
-                if np.mean(cv) < 5:
-                    st.success("Low variability between replicates suggests equilibrium was reached.")
-                elif np.mean(cv) < 15:
-                    st.info("Moderate variability between replicates. Consider increasing simulation steps.")
+                # Update axis labels explicitly
+                fig.update_layout(
+                    xaxis_title=param_display_name,
+                    yaxis_title=metric_display_name
+                )
+                
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Find critical values and turning points
+                try:
+                    turning_points = []
+                    values = results_df["final_value"].values
+                    for i in range(1, len(values)-1):
+                        if (values[i] > values[i-1] and values[i] > values[i+1]) or \
+                           (values[i] < values[i-1] and values[i] < values[i+1]):
+                            turning_points.append((results_df["param_value"].iloc[i], values[i]))
+                    
+                    if turning_points:
+                        st.write("**Critical values detected:**")
+                        for point in turning_points:
+                            if target_metric in ["poverty", "gini", "fragmentation"]:
+                                direction = "minimum" if point[1] < values[0] and point[1] < values[-1] else "maximum"
+                            else:
+                                direction = "maximum" if point[1] > values[0] and point[1] > values[-1] else "minimum"
+                            st.write(f"• {param_display_name} = {point[0]:.2f} ({direction} {metric_display_name}: {point[1]:.2f})")
+                    
+                    # Add explanation of what the error bars represent
+                    if num_replicates > 1:
+                        st.info(f"""
+                        **About the error bars:** Each point shows the mean value across {num_replicates} simulation runs.
+                        Error bars show ±1 standard deviation, representing the inherent variability in outcomes 
+                        due to randomness in the simulation. Larger error bars indicate parameter values where outcomes 
+                        are less predictable.
+                        """)
+                        
+                    # Identify optimal parameter value
+                    optimal_idx = results_df["final_value"].idxmax() if target_metric in ["world_gdp", "trade_volume"] else results_df["final_value"].idxmin()
+                    optimal_value = results_df["param_value"].iloc[optimal_idx]
+                    st.success(f"**Optimal {param_display_name}:** {optimal_value:.2f} for {'maximizing' if target_metric in ['world_gdp', 'trade_volume'] else 'minimizing'} {metric_display_name}")
+                except Exception as e:
+                    st.warning(f"Could not identify critical points due to: {str(e)}")
+                
+                # Bar chart of growth rates (if applicable)
+                if target_metric in ["world_gdp", "poverty", "trade_volume"]:
+                    fig2 = px.bar(
+                        results_df, 
+                        x="param_value", 
+                        y="growth_rate",
+                        error_y="growth_rate_std",
+                        title=f"Growth Rate in {metric_display_name} vs {param_display_name}"
+                    )
+                    
+                    # Update axis labels explicitly
+                    fig2.update_layout(
+                        xaxis_title=param_display_name,
+                        yaxis_title=f"{metric_display_name} Growth Rate"
+                    )
+                    
+                    st.plotly_chart(fig2, use_container_width=True)
+                    
+                    if num_replicates > 1:
+                        st.info("""
+                        **Interpreting growth rates:** These bars show the percentage change from start to end of simulation.
+                        Error bars indicate variability across replicates. Consistent growth/decline across parameter values
+                        suggests a robust relationship, while high variability suggests parameter-dependent dynamics.
+                        """)
+                
+                # Equilibrium assessment
+                if num_replicates > 1:
+                    st.subheader("Equilibrium Assessment")
+                    cv = results_df["final_value_std"] / results_df["final_value"] * 100  # coefficient of variation
+                    mean_cv = np.mean(cv)
+                    st.write(f"**Average coefficient of variation:** {mean_cv:.2f}%")
+                    
+                    if mean_cv < 5:
+                        st.success("✅ Low variability between replicates suggests the system reached equilibrium.")
+                    elif mean_cv < 15:
+                        st.info("⚠️ Moderate variability between replicates. Consider increasing simulation steps.")
+                    else:
+                        st.warning("❌ High variability between replicates. The system likely does not reach equilibrium with current settings.")
+                    
+                    # Show parameter regions with high variability
+                    high_cv_idx = cv > 15
+                    if any(high_cv_idx):
+                        high_var_params = results_df.loc[high_cv_idx, "param_value"].values
+                        st.write("**Parameter values with high outcome variability:**")
+                        for p in high_var_params:
+                            st.write(f"• {param_display_name} = {p:.2f}")
+                
+                # Data table
+                st.subheader("Detailed Results")
+                
+                # Format DataFrame for display with better column names
+                display_df = results_df[["param_value", "final_value", "final_value_std", "growth_rate", "growth_rate_std"]].copy()
+                display_df.columns = [
+                    param_display_name, 
+                    f"Final {metric_display_name}", 
+                    f"{metric_display_name} Std Dev", 
+                    "Growth Rate (%)", 
+                    "Growth Rate Std Dev"
+                ]
+                
+                # Format values for better readability
+                if target_metric == "world_gdp":
+                    display_df[f"Final {metric_display_name}"] = display_df[f"Final {metric_display_name}"].map(lambda x: f"{x:,.0f}")
+                    display_df[f"{metric_display_name} Std Dev"] = display_df[f"{metric_display_name} Std Dev"].map(lambda x: f"{x:,.0f}")
                 else:
-                    st.warning("High variability between replicates. System may not reach equilibrium with current settings.")
-            
-            # Data table
-            st.subheader("Results Summary")
-            st.dataframe(results_df[["param_value", "final_value", "final_value_std", "growth_rate", "growth_rate_std"]])
+                    display_df[f"Final {metric_display_name}"] = display_df[f"Final {metric_display_name}"].map(lambda x: f"{x:.3f}")
+                    display_df[f"{metric_display_name} Std Dev"] = display_df[f"{metric_display_name} Std Dev"].map(lambda x: f"{x:.3f}")
+                
+                display_df["Growth Rate (%)"] = display_df["Growth Rate (%)"].map(lambda x: f"{x*100:.1f}%")
+                display_df["Growth Rate Std Dev"] = display_df["Growth Rate Std Dev"].map(lambda x: f"{x*100:.1f}%")
+                
+                st.dataframe(display_df)
     
     with tab3:
         st.title("📊 Mean-Field Approximation vs Network Simulation")
