@@ -7,6 +7,8 @@ Requirements:
 """
 
 import streamlit as st
+st.set_page_config(page_title="Global Development Model", layout="wide")
+
 import pandas as pd
 import matplotlib.pyplot as plt
 

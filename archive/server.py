@@ -1,5 +1,5 @@
 from mesa.visualization.ModularVisualization import ModularServer
-from mesa.visualization.modules import NetworkModule, ChartModule
+from mesa.visualization.modules import NetworkModule, ChartModule, TextElement
 from mesa.visualization.UserParam import UserSettableParameter
 from model import GlobalDevelopmentModel
 
@@ -31,6 +31,23 @@ def agent_portrayal(agent):
         }
 
 
+# Tariff basics panel for intro econ students
+class TariffBasicsPanel(TextElement):
+    def render(self, model):
+        return """
+        <div style='padding:10px; font-size:14px;'>
+        <h3>Tariff Basics</h3>
+        <ul>
+          <li><b>Definition:</b> Tax on imports, percentage of import value.</li>
+          <li><b>Incidence:</b> Shared by consumers (higher prices) and producers (lower demand).</li>
+          <li><b>Revenue vs Deadweight Loss:</b> Government revenue and two efficiency losses.</li>
+          <li><b>Retaliation:</b> Reciprocal tariffs may be applied by trading partners.</li>
+          <li><b>Network Effects:</b> A tariff by one country can cascade through trade links.</li>
+        </ul>
+        </div>
+        """
+
+
 # 1. Create a NetworkModule to visualize the network of agents.
 #    - You can specify width, height, and optional library="d3" (the default).
 network_element = NetworkModule(agent_portrayal, 500, 500, library="d3")
@@ -56,6 +73,22 @@ chart_gini = ChartModule(
     [{"Label": "Global_Gini_Resources", "Color": "Black"}],
     data_collector_name='datacollector'
 )
+
+# Chart for average tariff over time (requires 'Avg_Tariff' in DataCollector)
+chart_avg_tariff = ChartModule([
+    {"Label": "Avg_Tariff", "Color": "Red"}
+], data_collector_name='datacollector')
+
+# Chart for reciprocal tariff ratio over time (requires 'Reciprocal_Ratio')
+chart_reciprocals = ChartModule([
+    {"Label": "Reciprocal_Ratio", "Color": "Purple"}
+], data_collector_name='datacollector')
+
+# Chart for MFA vs simulation world GDP (requires 'World_GDP_Sim' and 'World_GDP_MFA')
+chart_mfa_contrast = ChartModule([
+    {"Label": "World_GDP_Sim", "Color": "Blue"},
+    {"Label": "World_GDP_MFA", "Color": "Green"}
+], data_collector_name='datacollector')
 
 
 # 3. Define user-settable parameters (sliders). 
@@ -99,7 +132,11 @@ server = ModularServer(
         chart_avg_innovation,
         chart_avg_resources,
         chart_employment_rate,
-        chart_gini
+        chart_gini,
+        TariffBasicsPanel(),       # Intro Econ tariff panel
+        chart_avg_tariff,          # Avg tariff over time
+        chart_reciprocals,         # Reciprocal tariff ratio over time
+        chart_mfa_contrast         # MFA vs simulation GDP
     ],
     "Global Development Model",
     model_params

@@ -1,8 +1,12 @@
 mesa>=1.10.0
-networkx>=2.5
-matplotlib>=3.3.2
+networkx>=2.8.0
+matplotlib>=3.5.0
 altair
 solara
-streamlit
+streamlit>=1.44.0
 pyvis
-pandas
+pandas>=1.5.0
+numpy>=1.23.0
+plotly>=5.14.0
+scikit-learn>=1.0.0
+scipy>=1.8.0
