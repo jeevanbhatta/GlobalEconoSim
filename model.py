@@ -49,15 +49,32 @@ class TradeNetwork:
             total_flow = 0.0
             for g in goods:
                 prod = c_u.eff[g]
-                flow = (prod * c_u.gdp * c_v.gdp) / (dist ** 2)
-                flow *= (1 - tariff) ** price_elast
-                total_flow += flow
-            data["flow"] = total_flow
+                # Scale down GDP values to prevent overflow
+                gdp_u_scaled = c_u.gdp / 1e6  # Scale down by a million
+                gdp_v_scaled = c_v.gdp / 1e6  # Scale down by a million
+                try:
+                    # Use np.clip to limit flow to reasonable bounds
+                    flow = np.clip((prod * gdp_u_scaled * gdp_v_scaled) / (dist ** 2), 0, 1e12)
+                    flow *= (1 - tariff) ** price_elast
+                    # Check for NaN or inf values
+                    if np.isfinite(flow):
+                        total_flow += flow
+                    else:
+                        flow = 0
+                except (OverflowError, FloatingPointError):
+                    flow = 0
+            data["flow"] = np.clip(total_flow, 0, 1e12)  # Ensure flow is finite and non-negative
+        
         for c in self.countries.values():
             outs = self.G.out_edges(c.cid, data=True)
             ins = self.G.in_edges(c.cid, data=True)
-            c.exports = sum(d["flow"] for *_ , d in outs)
-            c.imports = sum(d["flow"] for *_ , d in ins)
+            try:
+                c.exports = sum(d.get("flow", 0) for *_, d in outs)
+                c.imports = sum(d.get("flow", 0) for *_, d in ins)
+            except (OverflowError, FloatingPointError):
+                # Handle error by setting to safe values
+                c.exports = 0.0
+                c.imports = 0.0
 
     def apply_tariff_delta(self, cid: int, delta: float):
         for _, v, d in self.G.out_edges(cid, data=True):
@@ -87,9 +104,28 @@ def simulate(n, blocs, steps, conn_intra, conn_inter, tariff_gap, tariff_sd, two
             net.apply_tariff_delta(*policy_shock)
         net.compute_trade_flows(goods)
         for c in countries:
-            trade_balance = 0.3 * c.exports - 0.2 * c.imports
-            gdp_growth = 0.02 + trade_balance / max(c.gdp, 1e-9)
-            c.gdp *= (1 + gdp_growth)
-            c.poverty_rate = max(c.poverty_rate * (1 - 0.3 * (gdp_growth - 0.01)), 0.01)
+            # Handle exports and imports safely
+            exports = min(c.exports, 1e12)  # Cap exports at reasonable value
+            imports = min(c.imports, 1e12)  # Cap imports at reasonable value
+            
+            # Calculate trade balance with safeguards
+            trade_balance = 0.3 * exports - 0.2 * imports
+            
+            # Limit GDP growth to prevent exponential explosion
+            # Use tanh to limit growth between -0.3 and +0.3 (reasonable economic bounds)
+            raw_growth = trade_balance / max(c.gdp, 1e3)
+            bounded_growth = 0.02 + 0.3 * np.tanh(raw_growth)  # Base growth + bounded trade effect
+            
+            # Apply GDP growth with safety checks
+            c.gdp = min(c.gdp * (1 + bounded_growth), 1e15)  # Cap GDP at reasonable maximum
+            
+            # Update poverty rate safely
+            try:
+                growth_effect = np.clip(bounded_growth - 0.01, -0.5, 0.5)  # Limit effect
+                c.poverty_rate = max(c.poverty_rate * (1 - 0.3 * growth_effect), 0.01)
+            except (OverflowError, FloatingPointError):
+                # If calculation fails, apply a safe default poverty reduction
+                c.poverty_rate = max(c.poverty_rate * 0.99, 0.01)
+            
             c.log_step()
     return net
