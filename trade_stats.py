@@ -1,502 +1,358 @@
 import numpy as np
 import pandas as pd
 import networkx as nx
-from model import TradeNetwork
 
-def get_top_gdp_countries(net: TradeNetwork, n=5):
-    """Get the top n countries by GDP with detailed statistics"""
-    # Find top n countries by GDP
-    top_gdp_countries = sorted(net.countries.values(), key=lambda c: c.gdp, reverse=True)[:n]
+def get_top_gdp_countries(network, n=5):
+    """Returns the top n countries by GDP"""
+    countries = list(network.countries.values())
+    top_countries = sorted(countries, key=lambda c: c.gdp, reverse=True)[:n]
     
-    # Create a DataFrame for better display
-    top_gdp_data = []
-    for c in top_gdp_countries:
-        # Get incoming and outgoing tariffs for this country
-        outgoing_tariffs = [data['tariff'] for _, _, data in net.G.out_edges(c.cid, data=True)]
-        incoming_tariffs = [data['tariff'] for _, _, data in net.G.in_edges(c.cid, data=True)]
+    # Create DataFrame for display
+    data = []
+    for c in top_countries:
+        data.append({
+            'Country ID': c.cid,
+            'Bloc': c.bloc,
+            'GDP': c.gdp,
+            'Population': c.population,
+            'GDP per capita': c.gdp / c.population * 1000,  # Scale for readability
+            'Poverty Rate': c.poverty_rate
+        })
+    return pd.DataFrame(data)
+
+def get_bottom_gdp_countries(network, n=5):
+    """Returns the bottom n countries by GDP"""
+    countries = list(network.countries.values())
+    bottom_countries = sorted(countries, key=lambda c: c.gdp)[:n]
+    
+    # Create DataFrame for display
+    data = []
+    for c in bottom_countries:
+        data.append({
+            'Country ID': c.cid,
+            'Bloc': c.bloc,
+            'GDP': c.gdp,
+            'Population': c.population,
+            'GDP per capita': c.gdp / c.population * 1000,  # Scale for readability
+            'Poverty Rate': c.poverty_rate
+        })
+    return pd.DataFrame(data)
+
+def get_top_connected_countries(network, n=5):
+    """Returns the top n countries by number of trading connections"""
+    # Calculate degree for each country
+    degree_dict = dict(network.G.degree())
+    top_countries = sorted(degree_dict.items(), key=lambda x: x[1], reverse=True)[:n]
+    
+    # Create DataFrame for display
+    data = []
+    for cid, degree in top_countries:
+        c = network.countries[cid]
+        data.append({
+            'Country ID': c.cid,
+            'Bloc': c.bloc,
+            'Trade Connections': degree,
+            'GDP': c.gdp,
+            'Exports': c.exports,
+            'Imports': c.imports
+        })
+    return pd.DataFrame(data)
+
+def get_least_connected_countries(network, n=5):
+    """Returns the least n countries by number of trading connections"""
+    # Calculate degree for each country
+    degree_dict = dict(network.G.degree())
+    bottom_countries = sorted(degree_dict.items(), key=lambda x: x[1])[:n]
+    
+    # Create DataFrame for display
+    data = []
+    for cid, degree in bottom_countries:
+        c = network.countries[cid]
+        data.append({
+            'Country ID': c.cid,
+            'Bloc': c.bloc,
+            'Trade Connections': degree,
+            'GDP': c.gdp,
+            'Exports': c.exports,
+            'Imports': c.imports
+        })
+    return pd.DataFrame(data)
+
+def get_trade_efficiency_countries(network, n=5, top=True):
+    """Returns countries sorted by trade efficiency (exports per connection)"""
+    data = []
+    for cid, country in network.countries.items():
+        # Get outgoing connections
+        connections = list(network.G.successors(cid))
+        num_connections = len(connections)
         
-        # Calculate average tariffs if they exist
-        avg_out_tariff = sum(outgoing_tariffs) / len(outgoing_tariffs) if outgoing_tariffs else 0
-        avg_in_tariff = sum(incoming_tariffs) / len(incoming_tariffs) if incoming_tariffs else 0
-        
-        # Calculate growth rate
-        gdp_history = c.history["gdp"]
-        if len(gdp_history) > 1 and gdp_history[0] > 0:
-            growth_rate = (gdp_history[-1] / gdp_history[0]) - 1
+        if num_connections > 0:
+            efficiency = country.exports / max(1, num_connections)  # Avoid division by zero
         else:
-            growth_rate = 0
+            efficiency = 0
             
-        top_gdp_data.append({
-            "Country ID": c.cid,
-            "GDP": c.gdp,
-            "GDP Formatted": f"{c.gdp:,.0f}",
-            "Bloc": c.bloc,
-            "Exports": c.exports,
-            "Exports Formatted": f"{c.exports:,.0f}",
-            "Imports": c.imports,
-            "Imports Formatted": f"{c.imports:,.0f}",
-            "Trade Balance": c.exports - c.imports,
-            "Trade Balance Formatted": f"{c.exports - c.imports:,.0f}",
-            "Avg Out Tariff": avg_out_tariff,
-            "Avg Out Tariff Formatted": f"{avg_out_tariff:.2f}",
-            "Avg In Tariff": avg_in_tariff,
-            "Avg In Tariff Formatted": f"{avg_in_tariff:.2f}",
-            "Growth Rate": growth_rate,
-            "Growth Rate Formatted": f"{growth_rate*100:.1f}%"
+        data.append({
+            'Country ID': cid,
+            'Bloc': country.bloc,
+            'Exports': country.exports,
+            'Connections': num_connections,
+            'Efficiency': efficiency,
+            'GDP': country.gdp
         })
     
-    return pd.DataFrame(top_gdp_data)
-
-
-def get_bottom_gdp_countries(net: TradeNetwork, n=5):
-    """Get the bottom n countries by GDP with detailed statistics"""
-    # Find bottom n countries by GDP
-    bottom_gdp_countries = sorted(net.countries.values(), key=lambda c: c.gdp)[:n]
-    
-    # Create a DataFrame for better display
-    bottom_gdp_data = []
-    for c in bottom_gdp_countries:
-        # Get incoming and outgoing tariffs for this country
-        outgoing_tariffs = [data['tariff'] for _, _, data in net.G.out_edges(c.cid, data=True)]
-        incoming_tariffs = [data['tariff'] for _, _, data in net.G.in_edges(c.cid, data=True)]
-        
-        # Calculate average tariffs if they exist
-        avg_out_tariff = sum(outgoing_tariffs) / len(outgoing_tariffs) if outgoing_tariffs else 0
-        avg_in_tariff = sum(incoming_tariffs) / len(incoming_tariffs) if incoming_tariffs else 0
-        
-        # Calculate growth rate
-        gdp_history = c.history["gdp"]
-        if len(gdp_history) > 1 and gdp_history[0] > 0:
-            growth_rate = (gdp_history[-1] / gdp_history[0]) - 1
-        else:
-            growth_rate = 0
-            
-        bottom_gdp_data.append({
-            "Country ID": c.cid,
-            "GDP": c.gdp,
-            "GDP Formatted": f"{c.gdp:,.0f}",
-            "Bloc": c.bloc,
-            "Exports": c.exports,
-            "Exports Formatted": f"{c.exports:,.0f}",
-            "Imports": c.imports,
-            "Imports Formatted": f"{c.imports:,.0f}",
-            "Trade Balance": c.exports - c.imports,
-            "Trade Balance Formatted": f"{c.exports - c.imports:,.0f}",
-            "Avg Out Tariff": avg_out_tariff,
-            "Avg Out Tariff Formatted": f"{avg_out_tariff:.2f}",
-            "Avg In Tariff": avg_in_tariff,
-            "Avg In Tariff Formatted": f"{avg_in_tariff:.2f}",
-            "Growth Rate": growth_rate,
-            "Growth Rate Formatted": f"{growth_rate*100:.1f}%"
-        })
-    
-    return pd.DataFrame(bottom_gdp_data)
-
-
-def get_top_connected_countries(net: TradeNetwork, n=5):
-    """Get the top n countries by number of trade connections"""
-    # Count connections per country
-    country_connections = {}
-    for cid in net.G.nodes():
-        country_connections[cid] = net.G.degree(cid)
-    
-    top_connected_cids = sorted(country_connections.items(), key=lambda x: x[1], reverse=True)[:n]
-    
-    # Create a DataFrame for display
-    top_conn_data = []
-    for cid, degree in top_connected_cids:
-        c = net.countries[cid]
-        outgoing_tariffs = [data['tariff'] for _, _, data in net.G.out_edges(cid, data=True)]
-        incoming_tariffs = [data['tariff'] for _, _, data in net.G.in_edges(cid, data=True)]
-        
-        avg_out_tariff = sum(outgoing_tariffs) / len(outgoing_tariffs) if outgoing_tariffs else 0
-        avg_in_tariff = sum(incoming_tariffs) / len(incoming_tariffs) if incoming_tariffs else 0
-        
-        # Calculate growth rate
-        gdp_history = c.history["gdp"]
-        if len(gdp_history) > 1 and gdp_history[0] > 0:
-            growth_rate = (gdp_history[-1] / gdp_history[0]) - 1
-        else:
-            growth_rate = 0
-            
-        top_conn_data.append({
-            "Country ID": cid,
-            "Connections": degree,
-            "GDP": c.gdp,
-            "GDP Formatted": f"{c.gdp:,.0f}",
-            "Bloc": c.bloc,
-            "Exports": c.exports,
-            "Exports Formatted": f"{c.exports:,.0f}",
-            "Imports": c.imports,
-            "Imports Formatted": f"{c.imports:,.0f}",
-            "Avg Out Tariff": avg_out_tariff,
-            "Avg Out Tariff Formatted": f"{avg_out_tariff:.2f}",
-            "Avg In Tariff": avg_in_tariff,
-            "Avg In Tariff Formatted": f"{avg_in_tariff:.2f}",
-            "Growth Rate": growth_rate,
-            "Growth Rate Formatted": f"{growth_rate*100:.1f}%"
-        })
-    
-    return pd.DataFrame(top_conn_data)
-
-
-def get_least_connected_countries(net: TradeNetwork, n=5):
-    """Get the least n countries by number of trade connections"""
-    # Count connections per country
-    country_connections = {}
-    for cid in net.G.nodes():
-        country_connections[cid] = net.G.degree(cid)
-    
-    least_connected_cids = sorted(country_connections.items(), key=lambda x: x[1])[:n]
-    
-    # Create a DataFrame for display
-    least_conn_data = []
-    for cid, degree in least_connected_cids:
-        c = net.countries[cid]
-        outgoing_tariffs = [data['tariff'] for _, _, data in net.G.out_edges(cid, data=True)]
-        incoming_tariffs = [data['tariff'] for _, _, data in net.G.in_edges(cid, data=True)]
-        
-        avg_out_tariff = sum(outgoing_tariffs) / len(outgoing_tariffs) if outgoing_tariffs else 0
-        avg_in_tariff = sum(incoming_tariffs) / len(incoming_tariffs) if incoming_tariffs else 0
-        
-        # Calculate growth rate
-        gdp_history = c.history["gdp"]
-        if len(gdp_history) > 1 and gdp_history[0] > 0:
-            growth_rate = (gdp_history[-1] / gdp_history[0]) - 1
-        else:
-            growth_rate = 0
-            
-        least_conn_data.append({
-            "Country ID": cid,
-            "Connections": degree,
-            "GDP": c.gdp,
-            "GDP Formatted": f"{c.gdp:,.0f}",
-            "Bloc": c.bloc,
-            "Exports": c.exports,
-            "Exports Formatted": f"{c.exports:,.0f}",
-            "Imports": c.imports,
-            "Imports Formatted": f"{c.imports:,.0f}",
-            "Avg Out Tariff": avg_out_tariff,
-            "Avg Out Tariff Formatted": f"{avg_out_tariff:.2f}",
-            "Avg In Tariff": avg_in_tariff,
-            "Avg In Tariff Formatted": f"{avg_in_tariff:.2f}",
-            "Growth Rate": growth_rate,
-            "Growth Rate Formatted": f"{growth_rate*100:.1f}%"
-        })
-    
-    return pd.DataFrame(least_conn_data)
-
-
-def get_trade_efficiency_countries(net: TradeNetwork, n=5, reverse=False):
-    """Get countries with highest/lowest trade efficiency (Trade Volume / GDP)"""
-    trade_efficiency = []
-    for cid, c in net.countries.items():
-        if c.gdp > 0:  # Avoid division by zero
-            efficiency = (c.exports + c.imports) / c.gdp
-            trade_efficiency.append((cid, efficiency))
-    
-    if not trade_efficiency:
-        return pd.DataFrame()  # Return empty DataFrame if no data
-        
-    # Sort by efficiency (highest or lowest)
-    if not reverse:
-        efficient_countries = sorted(trade_efficiency, key=lambda x: x[1], reverse=True)[:n]
+    df = pd.DataFrame(data)
+    if top:
+        # Return top n by efficiency
+        return df.sort_values('Efficiency', ascending=False).head(n)
     else:
-        efficient_countries = sorted(trade_efficiency, key=lambda x: x[1])[:n]
-    
-    # Create a DataFrame for display
-    eff_data = []
-    for cid, efficiency in efficient_countries:
-        c = net.countries[cid]
-        
-        # Calculate growth rate
-        gdp_history = c.history["gdp"]
-        if len(gdp_history) > 1 and gdp_history[0] > 0:
-            growth_rate = (gdp_history[-1] / gdp_history[0]) - 1
-        else:
-            growth_rate = 0
+        # Return bottom n by efficiency
+        return df.sort_values('Efficiency').head(n)
+
+def get_growth_rate_countries(network, n=5, top=True):
+    """Returns countries with highest/lowest GDP growth rates"""
+    data = []
+    for cid, country in network.countries.items():
+        if len(country.history['gdp']) >= 2:
+            initial_gdp = country.history['gdp'][0]
+            final_gdp = country.history['gdp'][-1]
             
-        eff_data.append({
-            "Country ID": cid,
-            "Trade Efficiency": efficiency,
-            "Trade Efficiency Formatted": f"{efficiency:.3f}",
-            "GDP": c.gdp,
-            "GDP Formatted": f"{c.gdp:,.0f}",
-            "Bloc": c.bloc,
-            "Exports": c.exports,
-            "Exports Formatted": f"{c.exports:,.0f}",
-            "Imports": c.imports,
-            "Imports Formatted": f"{c.imports:,.0f}",
-            "Growth Rate": growth_rate,
-            "Growth Rate Formatted": f"{growth_rate*100:.1f}%"
-        })
+            # Calculate average annualized growth rate
+            num_periods = len(country.history['gdp']) - 1
+            if initial_gdp > 0 and num_periods > 0:
+                growth_rate = (final_gdp / initial_gdp) ** (1 / num_periods) - 1
+            else:
+                growth_rate = 0
+                
+            data.append({
+                'Country ID': cid,
+                'Bloc': country.bloc,
+                'Initial GDP': initial_gdp,
+                'Final GDP': final_gdp,
+                'Growth Rate': growth_rate,
+                'Poverty Rate': country.poverty_rate
+            })
     
-    return pd.DataFrame(eff_data)
-
-
-def get_growth_rate_countries(net: TradeNetwork, n=5, highest=True):
-    """Get countries with highest/lowest GDP growth rate"""
-    growth_rates = []
-    for cid, c in net.countries.items():
-        gdp_history = c.history["gdp"]
-        if len(gdp_history) > 1 and gdp_history[0] > 0:
-            growth_rate = (gdp_history[-1] / gdp_history[0]) - 1
-            growth_rates.append((cid, growth_rate))
-    
-    if not growth_rates:
-        return pd.DataFrame()  # Return empty DataFrame if no data
-    
-    # Sort by growth rate (highest or lowest)
-    if highest:
-        sorted_countries = sorted(growth_rates, key=lambda x: x[1], reverse=True)[:n]
+    df = pd.DataFrame(data)
+    if top:
+        # Return top n by growth rate
+        return df.sort_values('Growth Rate', ascending=False).head(n)
     else:
-        sorted_countries = sorted(growth_rates, key=lambda x: x[1])[:n]
-    
-    # Create a DataFrame for display
-    growth_data = []
-    for cid, growth_rate in sorted_countries:
-        c = net.countries[cid]
-        outgoing_tariffs = [data['tariff'] for _, _, data in net.G.out_edges(cid, data=True)]
-        incoming_tariffs = [data['tariff'] for _, _, data in net.G.in_edges(cid, data=True)]
-        
-        avg_out_tariff = sum(outgoing_tariffs) / len(outgoing_tariffs) if outgoing_tariffs else 0
-        avg_in_tariff = sum(incoming_tariffs) / len(incoming_tariffs) if incoming_tariffs else 0
-        
-        connections = net.G.degree(cid)
-        
-        growth_data.append({
-            "Country ID": cid,
-            "Growth Rate": growth_rate,
-            "Growth Rate Formatted": f"{growth_rate*100:.1f}%",
-            "GDP": c.gdp,
-            "GDP Formatted": f"{c.gdp:,.0f}",
-            "Bloc": c.bloc,
-            "Connections": connections,
-            "Exports": c.exports,
-            "Exports Formatted": f"{c.exports:,.0f}",
-            "Imports": c.imports,
-            "Imports Formatted": f"{c.imports:,.0f}",
-            "Avg Out Tariff": avg_out_tariff,
-            "Avg Out Tariff Formatted": f"{avg_out_tariff:.2f}",
-            "Avg In Tariff": avg_in_tariff,
-            "Avg In Tariff Formatted": f"{avg_in_tariff:.2f}"
-        })
-    
-    return pd.DataFrame(growth_data)
+        # Return bottom n by growth rate
+        return df.sort_values('Growth Rate').head(n)
 
-
-def calculate_gdp_tariff_correlation(net: TradeNetwork):
-    """Calculate correlation between GDP and average tariffs"""
-    all_gdps = [c.gdp for c in net.countries.values()]
-    all_avg_tariffs = []
+def calculate_gdp_tariff_correlation(network):
+    """Calculate correlation between average tariffs and GDP"""
+    countries = list(network.countries.values())
     
-    for cid in net.countries:
-        country_tariffs = [data['tariff'] for _, _, data in net.G.out_edges(cid, data=True)]
-        avg_tariff = sum(country_tariffs) / len(country_tariffs) if country_tariffs else 0
-        all_avg_tariffs.append(avg_tariff)
+    # Calculate average tariff for each country's outgoing edges
+    avg_tariffs = []
+    gdp_values = []
     
-    # Calculate correlation coefficient if we have enough data
-    if len(all_gdps) > 1 and len(all_avg_tariffs) > 1:
-        return np.corrcoef(all_gdps, all_avg_tariffs)[0, 1]
+    for cid, country in network.countries.items():
+        outgoing_edges = list(network.G.out_edges(cid, data=True))
+        if outgoing_edges:
+            avg_tariff = np.mean([d['tariff'] for _, _, d in outgoing_edges])
+            avg_tariffs.append(avg_tariff)
+            gdp_values.append(country.gdp)
+    
+    # Calculate correlation
+    if len(avg_tariffs) > 1:
+        correlation = np.corrcoef(avg_tariffs, gdp_values)[0, 1]
     else:
-        return 0
+        correlation = 0
+        
+    return correlation, avg_tariffs, gdp_values
 
-
-def calculate_gdp_connections_correlation(net: TradeNetwork):
-    """Calculate correlation between GDP and number of connections"""
-    all_gdps = [c.gdp for c in net.countries.values()]
-    all_connections = [net.G.degree(cid) for cid in net.countries]
+def calculate_gdp_connections_correlation(network):
+    """Calculate correlation between number of trade connections and GDP"""
+    degree_dict = dict(network.G.degree())
     
-    # Calculate correlation coefficient if we have enough data
-    if len(all_gdps) > 1 and len(all_connections) > 1:
-        return np.corrcoef(all_gdps, all_connections)[0, 1]
+    connections = []
+    gdp_values = []
+    
+    for cid, degree in degree_dict.items():
+        connections.append(degree)
+        gdp_values.append(network.countries[cid].gdp)
+    
+    # Calculate correlation
+    if len(connections) > 1:
+        correlation = np.corrcoef(connections, gdp_values)[0, 1]
     else:
-        return 0
+        correlation = 0
+        
+    return correlation, connections, gdp_values
 
-
-def get_shock_country_comparison(net: TradeNetwork, shock_id: int):
+def get_shock_country_comparison(network, shock_id):
     """
-    Compares statistics of the shock country to mean and median values
-    
-    Args:
-        net: The trade network
-        shock_id: The ID of the country that received the policy shock
-        
-    Returns:
-        DataFrame with shock country stats and comparison to mean/median values
+    Compare a shocked country to its neighbors and the world average
+    Returns a DataFrame with comparison metrics
     """
-    if shock_id not in net.countries:
-        return pd.DataFrame()
+    if shock_id not in network.countries:
+        return None
+    
+    shocked_country = network.countries[shock_id]
+    
+    # Get neighbors of shocked country
+    neighbors = list(network.G.successors(shock_id)) + list(network.G.predecessors(shock_id))
+    neighbors = list(set(neighbors))  # Remove duplicates
+    
+    # Calculate metrics for shocked country
+    shocked_initial_gdp = shocked_country.history['gdp'][0]
+    shocked_final_gdp = shocked_country.history['gdp'][-1]
+    shocked_growth = (shocked_final_gdp / shocked_initial_gdp - 1) if shocked_initial_gdp > 0 else 0
+    
+    # Calculate metrics for neighbors
+    if neighbors:
+        neighbor_initial_gdp = np.mean([network.countries[n].history['gdp'][0] for n in neighbors])
+        neighbor_final_gdp = np.mean([network.countries[n].history['gdp'][-1] for n in neighbors])
+        neighbor_growth = (neighbor_final_gdp / neighbor_initial_gdp - 1) if neighbor_initial_gdp > 0 else 0
+    else:
+        neighbor_growth = 0
+    
+    # Calculate metrics for all countries
+    all_countries = list(network.countries.values())
+    all_initial_gdp = np.mean([c.history['gdp'][0] for c in all_countries])
+    all_final_gdp = np.mean([c.history['gdp'][-1] for c in all_countries])
+    all_growth = (all_final_gdp / all_initial_gdp - 1) if all_initial_gdp > 0 else 0
+    
+    # Create comparison DataFrame
+    data = {
+        'Growth Rate': [shocked_growth, neighbor_growth, all_growth],
+        'Final GDP': [shocked_final_gdp, neighbor_final_gdp, all_final_gdp],
+        'Initial GDP': [shocked_initial_gdp, neighbor_initial_gdp, all_initial_gdp],
+        'Poverty Rate': [
+            shocked_country.poverty_rate, 
+            np.mean([network.countries[n].poverty_rate for n in neighbors]) if neighbors else 0,
+            np.mean([c.poverty_rate for c in all_countries])
+        ]
+    }
+    
+    df = pd.DataFrame(data, index=['Shocked Country', 'Neighbors', 'World Average'])
+    return df
+
+def calculate_trade_balance_distribution(network):
+    """Calculate trade balance (exports - imports) for each country"""
+    balances = []
+    for cid, country in network.countries.items():
+        balance = country.exports - country.imports
+        balances.append({
+            'Country ID': cid,
+            'Bloc': country.bloc,
+            'Exports': country.exports,
+            'Imports': country.imports,
+            'Trade Balance': balance,
+            'GDP': country.gdp,
+            'Balance to GDP Ratio': balance / country.gdp if country.gdp > 0 else 0
+        })
+    
+    return pd.DataFrame(balances)
+
+def compare_bloc_performance(network):
+    """Compare economic performance between different political blocs"""
+    blocs = {}
+    for cid, country in network.countries.items():
+        bloc = country.bloc
+        if bloc not in blocs:
+            blocs[bloc] = {
+                'GDP': 0,
+                'Population': 0,
+                'Countries': 0,
+                'Avg Poverty': 0,
+                'Total Exports': 0,
+                'Total Imports': 0
+            }
         
-    # Get the shock country
-    shock_country = net.countries[shock_id]
+        blocs[bloc]['GDP'] += country.gdp
+        blocs[bloc]['Population'] += country.population
+        blocs[bloc]['Countries'] += 1
+        blocs[bloc]['Avg Poverty'] += country.poverty_rate
+        blocs[bloc]['Total Exports'] += country.exports
+        blocs[bloc]['Total Imports'] += country.imports
     
-    # Calculate mean and median values across all countries
-    all_countries = list(net.countries.values())
+    # Calculate averages
+    for bloc in blocs:
+        if blocs[bloc]['Countries'] > 0:
+            blocs[bloc]['Avg Poverty'] /= blocs[bloc]['Countries']
+            blocs[bloc]['GDP per Capita'] = (blocs[bloc]['GDP'] / blocs[bloc]['Population']) * 1000
+            blocs[bloc]['Exports per Country'] = blocs[bloc]['Total Exports'] / blocs[bloc]['Countries']
+            blocs[bloc]['Trade Balance'] = blocs[bloc]['Total Exports'] - blocs[bloc]['Total Imports']
     
-    # GDP stats
-    all_gdps = [c.gdp for c in all_countries]
-    mean_gdp = np.mean(all_gdps)
-    median_gdp = np.median(all_gdps)
+    return pd.DataFrame(blocs).T
+
+def get_growth_trajectory(network, country_id, normalize=True):
+    """Returns the GDP growth trajectory for a specific country"""
+    if country_id not in network.countries:
+        return None
     
-    # Export stats
-    all_exports = [c.exports for c in all_countries]
-    mean_exports = np.mean(all_exports)
-    median_exports = np.median(all_exports)
+    country = network.countries[country_id]
+    gdp_series = country.history['gdp']
     
-    # Import stats
-    all_imports = [c.imports for c in all_countries]
-    mean_imports = np.mean(all_imports)
-    median_imports = np.median(all_imports)
-    
-    # Trade balance stats
-    all_trade_balances = [c.exports - c.imports for c in all_countries]
-    mean_trade_balance = np.mean(all_trade_balances)
-    median_trade_balance = np.median(all_trade_balances)
-    
-    # Trade efficiency stats
-    all_efficiencies = [(c.exports + c.imports) / c.gdp if c.gdp > 0 else 0 for c in all_countries]
-    mean_efficiency = np.mean(all_efficiencies)
-    median_efficiency = np.median(all_efficiencies)
-    
-    # Growth rate stats
-    all_growth_rates = []
-    for c in all_countries:
-        gdp_history = c.history["gdp"]
-        if len(gdp_history) > 1 and gdp_history[0] > 0:
-            growth_rate = (gdp_history[-1] / gdp_history[0]) - 1
-            all_growth_rates.append(growth_rate)
-        else:
-            all_growth_rates.append(0)
-    
-    mean_growth = np.mean(all_growth_rates)
-    median_growth = np.median(all_growth_rates)
-    
-    # Connections stats
-    all_connections = [net.G.degree(c.cid) for c in all_countries]
-    mean_connections = np.mean(all_connections)
-    median_connections = np.median(all_connections)
-    
-    # Tariff stats
-    country_avg_tariffs = []
-    for c in all_countries:
-        outgoing_tariffs = [data['tariff'] for _, _, data in net.G.out_edges(c.cid, data=True)]
-        avg_tariff = sum(outgoing_tariffs) / len(outgoing_tariffs) if outgoing_tariffs else 0
-        country_avg_tariffs.append(avg_tariff)
-    
-    mean_tariff = np.mean(country_avg_tariffs)
-    median_tariff = np.median(country_avg_tariffs)
-    
-    # Get shock country's values
-    shock_outgoing_tariffs = [data['tariff'] for _, _, data in net.G.out_edges(shock_id, data=True)]
-    shock_avg_tariff = sum(shock_outgoing_tariffs) / len(shock_outgoing_tariffs) if shock_outgoing_tariffs else 0
-    
-    shock_connections = net.G.degree(shock_id)
-    
-    shock_gdp_history = shock_country.history["gdp"]
-    if len(shock_gdp_history) > 1 and shock_gdp_history[0] > 0:
-        shock_growth_rate = (shock_gdp_history[-1] / shock_gdp_history[0]) - 1
+    if normalize and len(gdp_series) > 0:
+        initial_gdp = gdp_series[0]
+        normalized_series = [gdp / initial_gdp for gdp in gdp_series]
+        return pd.DataFrame({
+            'Time Step': range(len(gdp_series)),
+            'Normalized GDP': normalized_series,
+            'Raw GDP': gdp_series
+        })
     else:
-        shock_growth_rate = 0
+        return pd.DataFrame({
+            'Time Step': range(len(gdp_series)),
+            'GDP': gdp_series
+        })
+
+def analyze_shock_effects(network, shock_id, before_window=5, after_window=15):
+    """Analyze the effects of a shock on various metrics before and after the shock"""
+    if 'friendship_stats_history' not in dir(network) or shock_id not in network.friendship_stats_history['shock_countries']:
+        return None
     
-    shock_trade_balance = shock_country.exports - shock_country.imports
+    # Find the shock point for this country
+    shock_point = None
+    for t, sid, _ in network.friendship_stats_history['shock_points']:
+        if sid == shock_id:
+            shock_point = t
+            break
     
-    # Calculate trade efficiency for shock country
-    if shock_country.gdp > 0:
-        shock_efficiency = (shock_country.exports + shock_country.imports) / shock_country.gdp
-    else:
-        shock_efficiency = 0
+    if shock_point is None:
+        return None
     
-    # Create comparison dataframe
-    comparison_data = [
-        {
-            "Metric": "GDP",
-            "Shock Country": shock_country.gdp,
-            "Shock Value": f"{shock_country.gdp:,.0f}",
-            "Mean": mean_gdp,
-            "Mean Value": f"{mean_gdp:,.0f}",
-            "Median": median_gdp,
-            "Median Value": f"{median_gdp:,.0f}",
-            "% Diff from Mean": (shock_country.gdp / mean_gdp - 1) * 100 if mean_gdp > 0 else 0,
-            "% Diff Value": f"{(shock_country.gdp / mean_gdp - 1) * 100:.1f}%" if mean_gdp > 0 else "N/A"
-        },
-        {
-            "Metric": "Exports",
-            "Shock Country": shock_country.exports,
-            "Shock Value": f"{shock_country.exports:,.0f}",
-            "Mean": mean_exports,
-            "Mean Value": f"{mean_exports:,.0f}",
-            "Median": median_exports,
-            "Median Value": f"{median_exports:,.0f}",
-            "% Diff from Mean": (shock_country.exports / mean_exports - 1) * 100 if mean_exports > 0 else 0,
-            "% Diff Value": f"{(shock_country.exports / mean_exports - 1) * 100:.1f}%" if mean_exports > 0 else "N/A"
-        },
-        {
-            "Metric": "Imports",
-            "Shock Country": shock_country.imports,
-            "Shock Value": f"{shock_country.imports:,.0f}",
-            "Mean": mean_imports,
-            "Mean Value": f"{mean_imports:,.0f}",
-            "Median": median_imports,
-            "Median Value": f"{median_imports:,.0f}",
-            "% Diff from Mean": (shock_country.imports / mean_imports - 1) * 100 if mean_imports > 0 else 0,
-            "% Diff Value": f"{(shock_country.imports / mean_imports - 1) * 100:.1f}%" if mean_imports > 0 else "N/A"
-        },
-        {
-            "Metric": "Trade Balance",
-            "Shock Country": shock_trade_balance,
-            "Shock Value": f"{shock_trade_balance:,.0f}",
-            "Mean": mean_trade_balance,
-            "Mean Value": f"{mean_trade_balance:,.0f}",
-            "Median": median_trade_balance,
-            "Median Value": f"{median_trade_balance:,.0f}",
-            "% Diff from Mean": (shock_trade_balance / mean_trade_balance - 1) * 100 if mean_trade_balance != 0 else 0,
-            "% Diff Value": f"{(shock_trade_balance / mean_trade_balance - 1) * 100:.1f}%" if mean_trade_balance != 0 else "N/A"
-        },
-        {
-            "Metric": "Trade Efficiency",
-            "Shock Country": shock_efficiency,
-            "Shock Value": f"{shock_efficiency:.3f}",
-            "Mean": mean_efficiency,
-            "Mean Value": f"{mean_efficiency:.3f}",
-            "Median": median_efficiency,
-            "Median Value": f"{median_efficiency:.3f}",
-            "% Diff from Mean": (shock_efficiency / mean_efficiency - 1) * 100 if mean_efficiency > 0 else 0,
-            "% Diff Value": f"{(shock_efficiency / mean_efficiency - 1) * 100:.1f}%" if mean_efficiency > 0 else "N/A"
-        },
-        {
-            "Metric": "Growth Rate",
-            "Shock Country": shock_growth_rate,
-            "Shock Value": f"{shock_growth_rate*100:.1f}%",
-            "Mean": mean_growth,
-            "Mean Value": f"{mean_growth*100:.1f}%",
-            "Median": median_growth,
-            "Median Value": f"{median_growth*100:.1f}%",
-            "% Diff from Mean": (shock_growth_rate / mean_growth - 1) * 100 if mean_growth != 0 else 0,
-            "% Diff Value": f"{(shock_growth_rate / mean_growth - 1) * 100:.1f}%" if mean_growth != 0 else "N/A"
-        },
-        {
-            "Metric": "Connections",
-            "Shock Country": shock_connections,
-            "Shock Value": f"{shock_connections}",
-            "Mean": mean_connections,
-            "Mean Value": f"{mean_connections:.1f}",
-            "Median": median_connections,
-            "Median Value": f"{median_connections:.1f}",
-            "% Diff from Mean": (shock_connections / mean_connections - 1) * 100 if mean_connections > 0 else 0,
-            "% Diff Value": f"{(shock_connections / mean_connections - 1) * 100:.1f}%" if mean_connections > 0 else "N/A"
-        },
-        {
-            "Metric": "Avg Tariff",
-            "Shock Country": shock_avg_tariff,
-            "Shock Value": f"{shock_avg_tariff:.2f}",
-            "Mean": mean_tariff,
-            "Mean Value": f"{mean_tariff:.2f}",
-            "Median": median_tariff,
-            "Median Value": f"{median_tariff:.2f}",
-            "% Diff from Mean": (shock_avg_tariff / mean_tariff - 1) * 100 if mean_tariff > 0 else 0,
-            "% Diff Value": f"{(shock_avg_tariff / mean_tariff - 1) * 100:.1f}%" if mean_tariff > 0 else "N/A"
-        }
-    ]
+    # Get data before and after shock
+    country = network.countries[shock_id]
+    time_points = network.friendship_stats_history['time']
     
-    return pd.DataFrame(comparison_data)
+    # Find valid indices for before and after windows
+    start_before = max(0, shock_point - before_window)
+    end_after = min(len(time_points), shock_point + after_window)
+    
+    # Get metrics for all available time points
+    metrics = {
+        'GDP': country.history['gdp'],
+        'Poverty Rate': country.history['poverty_rate'],
+        'Exports': country.history['exports'],
+        'Imports': country.history['imports'],
+        'Outgoing Tariffs': network.friendship_stats_history['shock_countries'][shock_id]['outgoing_avg_tariff'],
+        'Incoming Tariffs': network.friendship_stats_history['shock_countries'][shock_id]['incoming_avg_tariff'],
+        'Trading Partners': network.friendship_stats_history['shock_countries'][shock_id]['trading_partners']
+    }
+    
+    # Calculate average values before and after shock
+    before_after = {'Metric': [], 'Before Shock': [], 'After Shock': [], 'Change (%)': []}
+    
+    for metric_name, values in metrics.items():
+        if len(values) <= shock_point:
+            continue
+            
+        before_vals = values[start_before:shock_point]
+        after_vals = values[shock_point:end_after]
+        
+        before_avg = sum(before_vals) / len(before_vals) if before_vals else 0
+        after_avg = sum(after_vals) / len(after_vals) if after_vals else 0
+        
+        pct_change = ((after_avg / before_avg) - 1) * 100 if before_avg != 0 else 0
+        
+        before_after['Metric'].append(metric_name)
+        before_after['Before Shock'].append(before_avg)
+        before_after['After Shock'].append(after_avg)
+        before_after['Change (%)'].append(pct_change)
+    
+    return pd.DataFrame(before_after)

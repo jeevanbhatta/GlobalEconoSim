@@ -215,7 +215,7 @@ class TradeNetwork:
         
         return relations_G
 
-def simulate(n, blocs=0, steps=100, conn_intra=0.7, conn_inter=0.3, tariff_gap=0.1, tariff_sd=0.05, two_goods=False, policy_shock=None, additional_shocks=None):
+def simulate(n, blocs=0, steps=100, conn_intra=0.7, conn_inter=0.3, tariff_gap=0.1, tariff_sd=0.05, two_goods=False, policy_shock=None, additional_shocks=None, track_all_relations=False):
     goods = ["A", "B"] if two_goods else ["A"]
     countries = []
     for cid in range(n):
@@ -243,20 +243,14 @@ def simulate(n, blocs=0, steps=100, conn_intra=0.7, conn_inter=0.3, tariff_gap=0
         tariff_sd=tariff_sd,
     )
     
-    # Track friendship stats history for potential shock country
-    friendship_stats_history = {}
-    if policy_shock is not None and isinstance(policy_shock, tuple) and len(policy_shock) == 2:
-        shock_id, _ = policy_shock
-        if shock_id is not None and isinstance(shock_id, int) and 0 <= shock_id < n:
-            friendship_stats_history = {
-                "time": [],
-                "outgoing_avg_tariff": [],
-                "incoming_avg_tariff": [],
-                "same_bloc_count": [],
-                "trading_partners": [],
-                "shock_points": []  # Will track all shock points
-            }
-    
+    # Track friendship stats history for shocked countries
+    # We'll track all shock countries instead of just the initial one
+    friendship_stats_history = {
+        "time": [],
+        "shock_countries": {},
+        "shock_points": []  # Will track all shock points
+    }
+
     # Initialize additional_shocks if not provided
     if additional_shocks is None:
         additional_shocks = []
@@ -284,6 +278,28 @@ def simulate(n, blocs=0, steps=100, conn_intra=0.7, conn_inter=0.3, tariff_gap=0
     # Sort shocks by time
     all_shocks.sort(key=lambda x: x[0])
     
+    # Initialize diplomatic relations tracking for all countries
+    if track_all_relations:
+        for i in range(n):
+            for j in range(n):
+                if i != j:
+                    if i not in net.diplomatic_relations:
+                        net.diplomatic_relations[i] = {}
+                    net.diplomatic_relations[i][j] = 1.0  # Start with neutral relations
+    
+    # Keep track of all countries that receive shocks
+    shock_countries = set()
+    for _, shock_id, _ in all_shocks:
+        if 0 <= shock_id < n:
+            shock_countries.add(shock_id)
+            # Initialize tracking for this country
+            friendship_stats_history["shock_countries"][shock_id] = {
+                "outgoing_avg_tariff": [],
+                "incoming_avg_tariff": [],
+                "same_bloc_count": [],
+                "trading_partners": []
+            }
+    
     for t in range(steps):
         # Check for valid policy shocks at this time step
         shock_applied = False
@@ -298,14 +314,13 @@ def simulate(n, blocs=0, steps=100, conn_intra=0.7, conn_inter=0.3, tariff_gap=0
                     shock_applied = True
                     
                     # Mark the shock point in the history
-                    if friendship_stats_history:
-                        friendship_stats_history["shock_points"].append(t)
+                    friendship_stats_history["shock_points"].append((t, shock_id, shock_delta))
                 except (TypeError, ValueError):
                     # If shock parameters are invalid, just skip applying the shock
                     pass
         
         # Consider forming new blocs every 10 steps in response to changing trade patterns
-        elif t > 0 and t % 10 == 0:
+        if t > 0 and t % 10 == 0:
             net.allow_bloc_formation(tariff_threshold=0.4)
         
         net.compute_trade_flows(goods)
@@ -335,16 +350,14 @@ def simulate(n, blocs=0, steps=100, conn_intra=0.7, conn_inter=0.3, tariff_gap=0
             
             c.log_step()
         
-        # Track friendship stats for shocked country
-        if policy_shock is not None and isinstance(policy_shock, tuple) and len(policy_shock) == 2:
-            shock_id, _ = policy_shock
-            if shock_id is not None and isinstance(shock_id, int) and 0 <= shock_id < n:
-                stats = net.get_country_friendship_stats(shock_id)
-                friendship_stats_history["time"].append(t)
-                friendship_stats_history["outgoing_avg_tariff"].append(stats["outgoing_avg_tariff"])
-                friendship_stats_history["incoming_avg_tariff"].append(stats["incoming_avg_tariff"])
-                friendship_stats_history["same_bloc_count"].append(stats["same_bloc_count"])
-                friendship_stats_history["trading_partners"].append(stats["trading_partners"])
+        # Track friendship stats for all shocked countries
+        friendship_stats_history["time"].append(t)
+        for shock_id in shock_countries:
+            stats = net.get_country_friendship_stats(shock_id)
+            friendship_stats_history["shock_countries"][shock_id]["outgoing_avg_tariff"].append(stats["outgoing_avg_tariff"])
+            friendship_stats_history["shock_countries"][shock_id]["incoming_avg_tariff"].append(stats["incoming_avg_tariff"])
+            friendship_stats_history["shock_countries"][shock_id]["same_bloc_count"].append(stats["same_bloc_count"])
+            friendship_stats_history["shock_countries"][shock_id]["trading_partners"].append(stats["trading_partners"])
     
     # Store the friendship stats history in the network object
     net.friendship_stats_history = friendship_stats_history

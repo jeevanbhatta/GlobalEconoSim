@@ -24,7 +24,7 @@ except ImportError:
 
 from model import Country, TradeNetwork, simulate
 from analytics import mfa_series, parameter_sensitivity_analysis
-from visualization import plot_network, plot_histogram, plot_scatter, plot_line
+from visualization import plot_network, plot_histogram, plot_scatter, plot_line, plot_bar
 # Import functions from trade_stats for country analysis
 from trade_stats import (
     get_top_gdp_countries, get_bottom_gdp_countries,
@@ -76,7 +76,87 @@ streamlit run trade_app.py
 # STREAMLIT UI
 # -------------------------------------------------------------
 
+def continue_simulation(network, additional_steps, additional_shocks=None):
+    """Continue an existing simulation for additional timesteps"""
+    # Extract current parameters from network
+    n = len(network.countries)
+    blocs = max([c.bloc for c in network.countries.values()]) + 1
+    
+    # Estimate original parameters from the network
+    # This is a simplified estimate as we don't store all original parameters
+    conn_intra = sum(1 for u, v, d in network.G.edges(data=True) 
+                     if network.countries[u].bloc == network.countries[v].bloc) / (n * (n-1)/2)
+    conn_inter = sum(1 for u, v, d in network.G.edges(data=True)
+                     if network.countries[u].bloc != network.countries[v].bloc) / (n * (n-1)/2)
+    
+    tariffs = [d['tariff'] for _, _, d in network.G.edges(data=True)]
+    tariff_sd = np.std(tariffs) if tariffs else 0.05
+    
+    # Estimate intra-bloc and inter-bloc tariffs
+    intra_tariffs = [d['tariff'] for u, v, d in network.G.edges(data=True) 
+                    if network.countries[u].bloc == network.countries[v].bloc]
+    inter_tariffs = [d['tariff'] for u, v, d in network.G.edges(data=True)
+                    if network.countries[u].bloc != network.countries[v].bloc]
+    
+    tariff_intra_mu = np.mean(intra_tariffs) if intra_tariffs else 0.1
+    tariff_inter_mu = np.mean(inter_tariffs) if inter_tariffs else 0.3
+    tariff_gap = tariff_inter_mu - tariff_intra_mu
+    
+    # Check if it's a two-goods world
+    two_goods = 'B' in next(iter(network.countries.values())).eff
+    
+    # Get the current history length
+    current_steps = len(next(iter(network.countries.values())).history['gdp'])
+    
+    # Create a copy of the current network to continue from
+    import copy
+    net_copy = copy.deepcopy(network)
+    
+    # Run additional simulation steps
+    for t in range(additional_steps):
+        # Process any additional shocks
+        if additional_shocks:
+            for shock_id, shock_delta in additional_shocks:
+                if 0 <= shock_id < n:
+                    net_copy.apply_tariff_delta(shock_id, shock_delta)
+        
+        # Consider forming new blocs every 10 steps
+        if (current_steps + t) % 10 == 0:
+            net_copy.allow_bloc_formation(tariff_threshold=0.4)
+        
+        # Compute trade flows and update countries
+        goods = ["A", "B"] if two_goods else ["A"]
+        net_copy.compute_trade_flows(goods)
+        
+        for c in net_copy.countries.values():
+            exports = min(c.exports, 1e12)
+            imports = min(c.imports, 1e12)
+            
+            trade_balance = 0.3 * exports - 0.2 * imports
+            raw_growth = trade_balance / max(c.gdp, 1e3)
+            bounded_growth = 0.02 + 0.3 * np.tanh(raw_growth)
+            
+            c.gdp = min(c.gdp * (1 + bounded_growth), 1e15)
+            
+            try:
+                growth_effect = np.clip(bounded_growth - 0.01, -0.5, 0.5)
+                c.poverty_rate = max(c.poverty_rate * (1 - 0.3 * growth_effect), 0.01)
+            except:
+                c.poverty_rate = max(c.poverty_rate * 0.99, 0.01)
+            
+            c.log_step()
+    
+    return net_copy
+
 def main():
+    # Initialize session state at the beginning
+    if 'network' not in st.session_state:
+        st.session_state.network = None
+    if 'params' not in st.session_state:
+        st.session_state.params = {}
+    if 'current_steps' not in st.session_state:
+        st.session_state.current_steps = 0
+
     # Create tabs properly with individual references
     tab_names = ["Main Simulation", "Parameter Sensitivity Analysis", "MFA Comparison"]
     tab1, tab2, tab3 = st.tabs(tab_names)
@@ -109,7 +189,7 @@ def main():
 
         # sidebar with tooltips for parameter explanations
         n = st.sidebar.slider("Countries 🛈", 4, 80, 20, help="Number of countries in the simulation.")
-        blocs = st.sidebar.slider("Political blocs 🛈", 2, min(15, n), 4, help="Number of political/economic alliances (like EU, NAFTA).")
+        blocs = st.sidebar.slider("Political blocs 🛈", 0, min(15, n), 4, help="Number of political/economic alliances (like EU, NAFTA). Set to 0 for no blocs.")
         steps = st.sidebar.slider("Time steps 🛈", 20, 300, 60, 10, help="Number of simulation iterations. Higher values show longer-term effects but take more time.")
         conn_intra = st.sidebar.slider("Intra‑bloc link prob 🛈", 0.1, 1.0, 0.6, 0.05, help="Probability of trade links forming between countries in the same bloc. Higher values create denser within-bloc trade.")
         conn_inter = st.sidebar.slider("Inter‑bloc link prob 🛈", 0.0, 1.0, 0.2, 0.05, help="Probability of trade links forming between countries in different blocs. Lower values create more isolated blocs.")
@@ -117,21 +197,84 @@ def main():
         tariff_sd = st.sidebar.slider("Tariff SD 🛈", 0.0, 0.4, 0.05, 0.01, help="Standard deviation in tariff rates. Higher values create more variability in tariff policies.")
         two_goods = st.sidebar.checkbox("Two‑good world 🛈", value=True, help="If checked, each country produces two goods with different productivity levels, allowing for comparative advantage dynamics.")
 
-        shock_id = st.sidebar.number_input("Shock country id 🛈", 0, n - 1, 0, help="Which country will experience a policy shock (tariff change).")
-        shock_delta = st.sidebar.slider("Δ tariff shock 🛈", -0.5, 0.5, 0.1, 0.01, help="Size of tariff change (positive = increase, negative = decrease). Applied at 1/4 of the way through simulation.")
-        run = st.sidebar.button("Run 🚀")
+        # Allow users to disable the shock
+        apply_shock = st.sidebar.checkbox("Apply policy shock", value=True, help="If unchecked, no policy shock will be applied during the simulation.")
+        
+        if apply_shock:
+            shock_id = st.sidebar.number_input("Shock country id 🛈", 0, n - 1, 0, help="Which country will experience a policy shock (tariff change).")
+            shock_delta = st.sidebar.slider("Δ tariff shock 🛈", -0.5, 0.5, 0.1, 0.01, help="Size of tariff change (positive = increase, negative = decrease). Applied at 1/4 of the way through simulation.")
+            policy_shock = (shock_id, shock_delta)
+        else:
+            policy_shock = None
+            # Create hidden placeholder for shock parameters to maintain UI consistency
+            st.sidebar.markdown("*Shock disabled*")
 
-        if not run:
+        # Add controls for continuing simulation
+        if st.session_state.network is not None:
+            st.sidebar.markdown("---")
+            st.sidebar.markdown("### Continue Simulation")
+            additional_steps = st.sidebar.slider("Additional steps", 10, 100, 30, 10, 
+                                               help="How many more time steps to run from current state")
+            
+            col1, col2 = st.sidebar.columns(2)
+            with col1:
+                run = st.button("New Run 🚀")
+            with col2:
+                continue_run = st.button("Continue 🔄")
+        else:
+            run = st.sidebar.button("Run 🚀")
+            continue_run = False
+            additional_steps = 30  # Default value
+
+        # --- detect if any inputs have changed since last run ---
+        current_params = {
+            'n': n, 'blocs': blocs, 'conn_intra': conn_intra, 'conn_inter': conn_inter,
+            'tariff_gap': tariff_gap, 'tariff_sd': tariff_sd,
+            'two_goods': two_goods, 'policy_shock': policy_shock
+        }
+        params_changed = st.session_state.params != current_params
+
+        if not run and not continue_run and st.session_state.network is None:
             st.info("Set parameters and press *Run*.")
         else:
-            net = simulate(
-                n, blocs, steps, conn_intra, conn_inter, tariff_gap, tariff_sd, two_goods,
-                policy_shock=(shock_id, shock_delta),
-            )
+            # If this is a new run or params changed, create a new simulation
+            if run or st.session_state.network is None or params_changed:
+                # Store current parameters
+                st.session_state.params = current_params
+                
+                # Run new simulation
+                net = simulate(
+                    n, blocs, steps, conn_intra, conn_inter, tariff_gap, tariff_sd, two_goods,
+                    policy_shock=policy_shock,
+                )
+                st.session_state.network = net
+                st.session_state.current_steps = steps
+            
+            # If this is a continue run, extend the simulation
+            elif continue_run:
+                # Continue simulation with additional steps
+                current_net = st.session_state.network
+                
+                # Run additional steps with the continue_simulation method
+                with st.spinner(f"Continuing simulation for {additional_steps} steps..."):
+                    net = continue_simulation(
+                        current_net, additional_steps, 
+                        additional_shocks=None  # Add option for additional shocks if needed
+                    )
+                    
+                    st.session_state.network = net
+                    st.session_state.current_steps += additional_steps
+                    
+                    # Show a success message
+                    st.success(f"Simulation continued for {additional_steps} more steps. Total steps: {st.session_state.current_steps}")
+            else:
+                # Just use the existing network from session state
+                net = st.session_state.network
 
             # ---------------- Indicators ------------------------------------
-            world_gdp_series = [sum(c.history["gdp"][t] for c in net.countries.values()) for t in range(steps)]
-            mfa_series_vals = mfa_series(net, steps)
+            total_steps = st.session_state.current_steps
+            world_gdp_series = [sum(c.history["gdp"][t] for c in net.countries.values()) for t in range(total_steps)]
+            mfa_series_vals = mfa_series(net, total_steps)
 
             ind_df = pd.DataFrame({"Simulation": world_gdp_series, "MFA": mfa_series_vals})
             st.subheader("World GDP – Simulation vs MFA")
@@ -173,79 +316,8 @@ def main():
             
             # Display top and bottom countries by GDP and trade connections
             st.subheader("Country Analysis")
-            col1, col2 = st.columns(2)
             
-            with col1:
-                # Top and bottom countries by GDP
-                st.write("**Top 5 Countries by GDP**")
-                top_gdp_countries = get_top_gdp_countries(net, 5)
-                st.dataframe(pd.DataFrame(top_gdp_countries), hide_index=True)
-                
-                st.write("**Bottom 5 Countries by GDP**")
-                bottom_gdp_countries = get_bottom_gdp_countries(net, 5)
-                st.dataframe(pd.DataFrame(bottom_gdp_countries), hide_index=True)
-                
-                # GDP and tariff correlation
-                gdp_tariff_corr = calculate_gdp_tariff_correlation(net)
-                st.write(f"**Correlation between GDP and avg tariff: {gdp_tariff_corr:.3f}**")
-                if gdp_tariff_corr < -0.3:
-                    st.write("📉 Lower tariffs are associated with higher GDP in this simulation")
-                elif gdp_tariff_corr > 0.3:
-                    st.write("📈 Higher tariffs are associated with higher GDP in this simulation")
-                else:
-                    st.write("🔄 No strong relationship between tariffs and GDP in this simulation")
-            
-            with col2:
-                # Top and least connected countries
-                st.write("**Top 5 Countries by Trade Connections**")
-                top_connected_countries = get_top_connected_countries(net, 5)
-                st.dataframe(pd.DataFrame(top_connected_countries), hide_index=True)
-                
-                st.write("**Least 5 Connected Countries**")
-                least_connected_countries = get_least_connected_countries(net, 5)
-                st.dataframe(pd.DataFrame(least_connected_countries), hide_index=True)
-                
-                # Connections and GDP correlation
-                gdp_connections_corr = calculate_gdp_connections_correlation(net)
-                st.write(f"**Correlation between connections and GDP: {gdp_connections_corr:.3f}**")
-                if gdp_connections_corr > 0.5:
-                    st.write("🔗 More trade connections strongly correlate with higher GDP")
-                elif gdp_connections_corr > 0.2:
-                    st.write("🔗 More trade connections moderately correlate with higher GDP")
-                else:
-                    st.write("🔄 No strong relationship between connections and GDP")
-            
-            # Calculate and display top countries by trade efficiency
-            st.subheader("Trade Efficiency Analysis")
-            trade_efficiency_countries = get_trade_efficiency_countries(net, 5)
-            st.write("**Top 5 Countries by Trade Efficiency**")
-            st.dataframe(pd.DataFrame(trade_efficiency_countries), hide_index=True)
-            
-            st.write("**Bottom 5 Countries by Trade Efficiency**")
-            least_trade_efficiency_countries = get_trade_efficiency_countries(net, 5, reverse=True)
-            st.dataframe(pd.DataFrame(least_trade_efficiency_countries), hide_index=True)
-            
-            st.write("""
-            **Note:** Trade Efficiency measures how much trade a country conducts relative to its GDP.
-            Higher values indicate countries that are more integrated into the global economy and
-            may be benefiting more from trade relative to their economic size.
-            """)
-            
-            # Display shock country comparison to mean/median values
-            st.subheader("Shock Country Analysis")
-            st.write(f"**Country {shock_id} (Shock Country) Statistics Compared to Mean/Median**")
-            shock_comparison = get_shock_country_comparison(net, shock_id)
-            st.dataframe(shock_comparison[["Metric", "Shock Value", "Mean Value", "Median Value", "% Diff Value"]], hide_index=True)
-            
-            st.write("""
-            **Note:** This comparison shows how the country that received the policy shock compares to 
-            the mean and median values across all countries. Positive percentage differences indicate 
-            the shock country is performing better than average, while negative values indicate worse 
-            performance.
-            """)
-
-            # Community detection on final trade network
-            st.subheader("Trade Communities (Final State)")
+            # Community detection visualization
             try:
                 from networkx.algorithms.community import greedy_modularity_communities
                 communities = list(greedy_modularity_communities(net.G.to_undirected()))
@@ -256,24 +328,129 @@ def main():
                 st.write(f"Detected {len(communities)} communities. Largest size: {max(sizes)}")
             except Exception:
                 st.write("Community detection failed. Ensure networkx >=2.5 is installed.")
+                
+            # Best and worst performers analysis
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.subheader("Top 5 Countries by GDP")
+                top_gdp_df = get_top_gdp_countries(net, 5)
+                st.dataframe(top_gdp_df)
+                
+                st.subheader("Top 5 Most Connected Countries")
+                top_conn_df = get_top_connected_countries(net, 5)
+                st.dataframe(top_conn_df)
+                
+                st.subheader("Top 5 Countries by Trade Efficiency")
+                top_eff_df = get_trade_efficiency_countries(net, 5, top=True)
+                st.dataframe(top_eff_df)
+            
+            with col2:
+                st.subheader("Bottom 5 Countries by GDP")
+                bottom_gdp_df = get_bottom_gdp_countries(net, 5)
+                st.dataframe(bottom_gdp_df)
+                
+                st.subheader("5 Least Connected Countries")
+                bottom_conn_df = get_least_connected_countries(net, 5)
+                st.dataframe(bottom_conn_df)
+                
+                st.subheader("Top 5 Countries by Growth Rate")
+                growth_df = get_growth_rate_countries(net, 5, top=True)
+                st.dataframe(growth_df)
+            
+            # Correlation analysis
+            st.subheader("Economic Correlations")
+            tariff_corr, _, _ = calculate_gdp_tariff_correlation(net)
+            conn_corr, _, _ = calculate_gdp_connections_correlation(net)
+            
+            corr_data = {
+                'Metric': ['GDP vs Tariff Level', 'GDP vs Connection Count'],
+                'Correlation': [tariff_corr, conn_corr]
+            }
+            corr_df = pd.DataFrame(corr_data)
+            
+            # Plot correlation bar chart
+            fig_corr = plot_bar(
+                corr_df, 
+                x='Metric', 
+                y='Correlation', 
+                title="Economic Correlations",
+                barmode='group'
+            )
+            st.plotly_chart(fig_corr, use_container_width=True)
+            
+            # Shock impact analysis if a shock was applied
+            if policy_shock is not None and apply_shock:
+                st.subheader(f"Impact of Tariff Shock on Country {shock_id}")
+                shock_comp_df = get_shock_country_comparison(net, shock_id)
+                if shock_comp_df is not None:
+                    st.dataframe(shock_comp_df)
+                    
+                    # Visualize growth comparison
+                    growth_comp = pd.DataFrame({
+                        'Entity': ['Shocked Country', 'Neighbors', 'World Average'],
+                        'Growth Rate': shock_comp_df['Growth Rate'].values
+                    })
+                    fig_shock = plot_bar(
+                        growth_comp, 
+                        x='Entity', 
+                        y='Growth Rate',
+                        title="Growth Rate Comparison",
+                        color='Entity'
+                    )
+                    st.plotly_chart(fig_shock, use_container_width=True)
+                else:
+                    st.write("No data available for shock comparison.")
 
             # GDP histogram
             gdp_vals = [c.gdp for c in net.countries.values()]
-            st.subheader("GDP distribution")
+            st.subheader("GDP Distribution")
             # Render GDP histogram using Plotly Express
             fig_hist = plot_histogram(gdp_vals, nbins=20, title="GDP Distribution")
             st.plotly_chart(fig_hist, use_container_width=True)
 
             # poverty trend
             avg_pov = np.mean([c.history["poverty_rate"] for c in net.countries.values()], axis=0)
-            st.subheader("Average poverty rate")
-            st.line_chart(pd.Series(avg_pov))
+            st.subheader("Average Poverty Rate")
+            
+            # Convert to DataFrame for better formatting
+            poverty_df = pd.DataFrame({
+                'Time Step': range(len(avg_pov)),
+                'Poverty Rate': avg_pov
+            })
+            fig_poverty = px.line(poverty_df, x='Time Step', y='Poverty Rate', 
+                                title="Average Poverty Rate Over Time")
+            st.plotly_chart(fig_poverty, use_container_width=True)
+            
+            # Gini coefficient calculation and visualization
+            st.subheader("Inequality (Gini Coefficient)")
+            gini_series = []
+            for t in range(total_steps):
+                gdp_values = sorted([c.history["gdp"][t] for c in net.countries.values() if t < len(c.history["gdp"])])
+                n_countries = len(gdp_values)
+                if n_countries > 1:
+                    cum_wealth = np.cumsum(gdp_values)
+                    gini = (n_countries + 1 - 2 * np.sum(cum_wealth) / cum_wealth[-1]) / n_countries
+                else:
+                    gini = 0
+                gini_series.append(gini)
+            
+            gini_df = pd.DataFrame({
+                'Time Step': range(len(gini_series)),
+                'Gini Coefficient': gini_series
+            })
+            
+            fig_gini = px.line(gini_df, x='Time Step', y='Gini Coefficient',
+                             title="Inequality Over Time (Gini Coefficient)")
+            st.plotly_chart(fig_gini, use_container_width=True)
 
             st.markdown("""
             ### Insights
             * **Tariff gap:** When the inter‑bloc tariffs exceed intra by ~0.4+, the network often splits into isolated blocs (see *Fragments* count).
             * **MFA Divergence:** Mean‑field under‑reports both volatility and concentration; network effects amplify inequality in many runs.
-            * **Two‑good heterogeneity** creates comparative‑advantage cycles – some blocs specialise in A, others in B – further distancing results from MFA’s uniform world.
+            * **Two‑good heterogeneity** creates comparative‑advantage cycles – some blocs specialise in A, others in B – further distancing results from MFA's uniform world.
+            * **Network effects:** Countries with higher connectivity tend to experience faster growth and lower poverty rates.
+            * **Shock propagation:** Tariff shocks create ripple effects that can be observed in neighboring countries' growth trajectories.
             """)
 
     with tab2:
