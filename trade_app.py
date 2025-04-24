@@ -342,7 +342,7 @@ def main():
                 st.dataframe(top_conn_df)
                 
                 st.subheader("Top 5 Countries by Trade Efficiency")
-                top_eff_df = get_trade_efficiency_countries(net, 5, top=True)
+                top_eff_df = get_trade_efficiency_countries(net, 5, reverse=False)
                 st.dataframe(top_eff_df)
             
             with col2:
@@ -355,13 +355,13 @@ def main():
                 st.dataframe(bottom_conn_df)
                 
                 st.subheader("Top 5 Countries by Growth Rate")
-                growth_df = get_growth_rate_countries(net, 5, top=True)
+                growth_df = get_growth_rate_countries(net, 5, highest=True)
                 st.dataframe(growth_df)
             
             # Correlation analysis
             st.subheader("Economic Correlations")
-            tariff_corr, _, _ = calculate_gdp_tariff_correlation(net)
-            conn_corr, _, _ = calculate_gdp_connections_correlation(net)
+            tariff_corr, tariff_gdps, tariff_data = calculate_gdp_tariff_correlation(net)
+            conn_corr, conn_gdps, conn_data = calculate_gdp_connections_correlation(net)
             
             corr_data = {
                 'Metric': ['GDP vs Tariff Level', 'GDP vs Connection Count'],
