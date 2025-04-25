@@ -12,6 +12,38 @@ This project simulates international trade networks and their evolution over tim
   - Network diameter and path lengths
   - Community detection
   
+## Interactive Simulation
+
+The project includes a full-featured interactive Streamlit application that allows you to:
+
+- Configure simulation parameters (countries, political blocs, tariffs, etc.)
+- Run simulations and visualize trade networks in real-time
+- Apply policy shocks and observe how they propagate through the network
+- Compare network simulation with Mean-Field Approximation (MFA)
+- Analyze economic metrics like GDP, poverty rates, and inequality
+
+## Running the Interactive App
+
+1. Install the required packages:
+   ```bash
+   pip install streamlit networkx numpy pandas plotly~=5.19 scipy
+   ```
+
+2. Run the Streamlit app:
+   ```bash
+   streamlit run trade_app.py
+   ```
+
+3. The app will open in your web browser at http://localhost:8501
+
+## Simulation Parameters
+
+- **Countries**: Control the number of countries in the simulation (4-80)
+- **Political blocs**: Group countries into alliance blocs with preferential trading
+- **Tariff gap**: Set how much higher inter-bloc tariffs are compared to intra-bloc tariffs
+- **Two-good world**: Enable comparative advantage with countries producing two goods with different efficiency
+- **Policy shock**: Apply tariff changes to specific countries and observe ripple effects
+
 ## Components
 
 - **Trade Network**: Directed graph with countries as nodes and trade relationships as edges
@@ -27,6 +59,9 @@ The simulation tracks and visualizes:
    - Average tariffs
    - Transaction costs 
    - Friendship levels
+   - GDP growth
+   - Poverty rates
+   - Inequality (Gini coefficient)
 
 2. **Network Structure**:
    - Number of trade relationships
@@ -38,13 +73,13 @@ The simulation tracks and visualizes:
    - Countries with high betweenness centrality
    - Major players in the global trade network
 
-## Extended Analysis
+## File Structure
 
-The notebook includes additional analysis tools:
-- Distance vs. transaction cost correlation
-- Community detection and visualization
-- Trade hub identification
-- Centrality analysis for identifying key countries in the network
+- `trade_app.py` - Main Streamlit application
+- `model.py` - Core simulation primitives and engine
+- `visualization.py` - Plotting and visualization functions
+- `analytics.py` - Statistical analysis and advanced metrics
+- `trade_stats.py` - Functions for analyzing trade network statistics
 
 ## Requirements
 
@@ -53,21 +88,6 @@ The notebook includes additional analysis tools:
 - NumPy
 - Matplotlib
 - Pandas
-- Seaborn
-- scipy
-- python-louvain (optional, for community detection algorithm)
-
-## Getting Started
-
-1. Install required packages:
-   ```
-   pip install networkx numpy matplotlib pandas seaborn scipy
-   pip install python-louvain  # Optional, for community detection
-   ```
-
-2. Run the Jupyter notebook:
-   ```
-   jupyter notebook trade_n_countries.ipynb
-   ```
-
-3. Execute all cells to run the simulation and view the results
+- Plotly
+- Streamlit
+- Scipy
