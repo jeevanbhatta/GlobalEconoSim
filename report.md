@@ -5,7 +5,7 @@
 
 This report provides a detailed explanation of the Global Trade Simulation model, its technical implementation, key assumptions, and how to interpret its results. The simulation models international trade between countries as a network where trade flows are affected by tariffs, political blocs, and comparative advantages in production.
 
-See the deployed version [here](https://tradesimulation.streamlit.app/).
+See the deployed version [here](https://tradesimulation.streamlit.app/). I'm hosting for free so the app gets inactive if not used for a while, but if you click the button, it makes the app active again in a few seconds. 
 
 The source code can also be found in the [Github Repo](https://github.com/lifee77/GlobalEconoSim).
 
@@ -141,12 +141,72 @@ bounded_growth = 0.02 + 0.3 * np.tanh(raw_growth)  # Base growth + bounded trade
 c.gdp = min(c.gdp * (1 + bounded_growth), 1e15)  # Cap GDP at reasonable maximum
 ```
 
-Key assumptions:
+# Key assumptions:
 - Base growth rate of 2% (0.02). This is considered normal growth too. [(Corporate Finance Institute, n.d.)](https://corporatefinanceinstitute.com/resources/economics/economic-growth-rate/#:~:text=For%20a%20developed%20economy%2C%20an,which%20leads%20to%20increased%20spending.)
 - Exports contribute positively to growth (multiplier: 0.3)
 - Imports have a smaller negative effect (multiplier: 0.2)
 - Growth is bounded by a hyperbolic tangent function to ensure stability
 - Hard caps prevent unrealistic values
+- My initial assumption for **one step** in the simulation was a day, but that's not realistic as diplomatic processes take much longer. Realistically each step should be **1 week**.
+
+# All other Assumptions
+
+Where there are many economic theories that this simulation is based off of. These are a few of them that are applied. See notes for where these assumptions are simplified/redundant.
+
+## A. Comparative Advantage 
+
+- **Ricardo's Principle**: Each country has a comparative advantage in at least one good, as per Ricardian trade theory. This principle does not apply in the simulation as we have a two goods world with more than 2 countries.
+- **Productivity Heterogeneity**: Countries draw random productivity values for goods A and B, creating natural comparative advantages.
+
+## B. Trade Regimes and Tariffs
+
+- **Tariff Continuum**: Countries exist on a spectrum from autarky (no trade) to free trade, represented by tariff values from 0 (free) to 1 (prohibitive). In real life we barely have any country with either of them. North Korea might be an extreme example but they still do have trade with China and Russia (and some assistance from South Korea).
+- **Political Blocs**: The simulation models preferential trade agreements through lower intra-bloc tariffs. This aggregates two things that occur in real life
+    - Trade agreements like [North American Trade Agreement](https://ustr.gov/trade-agreements/free-trade-agreements/united-states-mexico-canada-agreement) or the [EU zone] (https://policy.trade.ec.europa.eu/eu-trade-relationships-country-and-region/negotiations-and-agreements_en).
+    - Friendships & Neighboring Status: Neighboring countries and allies even without special blocs are more likely to trade with each other.
+- **Reciprocal Tariffs**: Higher tariffs from country A to B increase the probability of retaliatory tariffs from B to A, as seen in real-world trade wars. A major thing that I **ignored** here is the rade flow between the countries. Ideally if country B buys 90% of country A's goods, they would not like to go on a trade war. However, each othe treat each other the same in terms of recrprocal tarrif. And the reciprocal tarrifs are lower than original as the initial tarrif has already done economic damage to both countries.
+- **Tariff Incidence**: The price elasticity parameter determines how tariffs affect trade flows, reflecting burden-sharing between producers and consumers.
+
+## C. Transaction Costs
+
+- **Distance Effect**: Trade flows follow a gravity model pattern: proportional to GDP and inversely proportional to squared distance.
+- **Transport Modes**: While not explicitly modeled, the distance parameter implicitly captures the higher costs of trade for distant countries.
+- **Landlocked Disadvantage**: Not directly modeled but implied by the distance parameter (could be extended to add specific landlocked penalties).
+
+## D. Network Structure
+
+- **Initial Connectivity**: Trade links form probabilistically, with higher chances within political blocs.
+- **Trade Flow Evolution**: Links strengthen or weaken over time based on tariffs and economic growth.
+- **Network Effects**: The model captures cascade effects where policy changes in one country affect the entire network.
+
+## E. Economic Growth Dynamics
+
+- **Trade-Driven Growth**: GDP growth is partially determined by trade balance, reflecting export-led growth theories.
+- **Poverty Reduction**: Growth reduces poverty rates, following empirical evidence that trade openness tends to reduce poverty. This is based on the fact that employment increases and the cost of goods and services decreases. But, it's not guranteed that poverty decreases, specially when automation kicks in.
+- **Increasing Returns**: While not explicitly modeled, the positive feedback between trade and growth captures elements of Krugman's increasing returns theory.
+
+## F. Mean-Field Approximation (MFA)
+
+- **Uniform Interaction**: The MFA replaces specific bilateral relationships with average interactions.
+- **Non-Linear Divergence**: We assume that network effects create structural divergences from mean-field predictions.
+- **Sigmoid Function**: The MFA model uses an S-shaped curve to relate aggregate variables, reflecting common economic transitions.
+
+## G. Simplifications and Limitations
+
+- **No Exchange Rates**: The model assumes a single global currency for simplicity.
+- **No Resource Constraints**: The model ignores natural resource endowments that impact real-world trade patterns.
+- **No Political Disruptions**: Wars, sanctions, and other political events are not entirely modeled. A country can have policy shocks (tarrifs or subsidy) but that applies to all other cuntries. 
+- **No Dynamic Comparative Advantage**: We do not model the evolution of national capabilities over time.
+- **No Capital Flows**: The model focuses on trade in goods.
+- **Migrations** : The model also does not account for migration of both skilled laborers. 
+- **Subsidy**: Tarrifs often come with subsidy to enhance local manufacturing or services. I have ignored that as we do not know the country's budget. But also, such processes take years and the simulation runs abrely for days.
+
+
+## H. Welfare Implications
+
+- **GDP Benefits**: The model assumes that, in general, more trade leads to higher GDP.
+- **Distributional Effects**: The Gini coefficient tracks how trade patterns affect inequality **between** countries. Unfortunately,  We cannot account for vertical and horizontal inequality within a country in this Model.
+- **Deadweight Loss**: Higher tariffs reduce total world GDP, reflecting deadweight losses from trade barriers.
 
 ### 3.4 Policy Shocks
 
@@ -303,46 +363,46 @@ def parameter_sensitivity_analysis(param_name, param_range, fixed_params, target
 
 This allows for rigorous testing of how the model responds to different parameters.
 
-## 6. Key Model Assumptions
 
-### 6.1 Economic Growth Assumptions
+## 6. Interpreting Simulation Results
+I'm running the simulation with the following default values:
+Countries: 80, Political Blocs: 3, Time Steps: 300 weeks, Intra Bloc link (trade) probability: 0.8, Inter bloc link probability: 0.5, Tarrif gap (between intra and inter): 0.3, Tarrif S.D.: 0.15. I have set tarrif shock (by a special country to 0). ANd this is a two good world.
+This results in the follwoing higher order effects.
+![World GDP with initial Parameters](resources/GDP_initial_aram.png)
+_**Figure 1**World GDP (Y-axis) along with simulation runs (X axis- weeks). Each country has initial GDP, which increases over time as trade continues. GDP = C + I + G + (X - M), where C,I,G,X, and M represent Consuemr spending, investment, government spending, export and import respectively. This is an interactive graph. Please use the [website](https://tradesimulation.streamlit.app/) to see it best._
 
-- Base economic growth rate of 2%
-- Trade surplus contributes positively to growth
-- Growth is bounded to prevent unrealistic runaway effects
-- No explicit modeling of:
-  - Monetary policy
-  - Fiscal policy
-  - Labor markets
-  - Capital accumulation
+This result is expected (even in real life) with trade growth as consumers get cheaper goods (countries product the most efficient good). The tarrifs (minimal so far) also increase government budget. Consumer spending and increasing taxes also contribute to higher budget, eventually increasing governemnt spending- which generates employment and increases consumer spending again making a reinforcing cycle. 
 
-### 6.2 Trade Model Assumptions
+### Tarrif Distribution:
+The tarrif distribution here is an **emergent property**. There are multiple factors playing a role.
 
-- Gravity model of trade flows
-- Two goods (A and B) with different productivity levels
-- Price elasticity of 1.0 (linear response to tariffs)
-- Distance affects trade flows according to an inverse square law
-- No explicit modeling of:
-  - Exchange rates
-  - Non-tariff barriers
-  - Trade in services
-  - Supply chain disruptions
+- Distribution for in-bloc countries.
+- Distribution for countriesoutside the bloc.
+- Reciprocal tarrifs.
+The initial mean is 0.1 as countries do have some sort of tarrif to protect vulnerable local industries (In real life tarrifs generally are sectoral, we are just averaging those out here). Before reciprocal tarrifs kick in, this is how the calculation is done:
 
-### 6.3 Political Assumptions
+- tariff_gap = 0.3 → gap/2 = 0.15
+- tariff_sd = 0.15
 
-- Countries are assigned to initial political blocs
-- Blocs have preferential tariff rates
-- Countries can form new blocs based on trade patterns
-- Tariff shocks lead to retaliatory measures (70% reciprocal)
-- No explicit modeling of:
-  - Political ideology
-  - Military alliances
-  - Colonial relationships
-  - Cultural affinity
+We get;
 
-## 7. Interpreting Simulation Results
+- intra‑bloc mean = 0.10 − 0.15 = −0.05 → clipped to 0.0
+- inter‑bloc mean = 0.10 + 0.15 = 0.25
 
-### 7.1 Network Structure
+and each draw is from N(0.0, 0.15) or N(0.25, 0.15), then clipped to [0,1].
+
+The combination of those two Normal distribution and reciprocal tarrif gives a dstribution like this:
+
+![Tarrif Distribution](resources/tarrif_distribution_init.png)
+
+_**Figure 2.** Tarrif distribution in the Simulated Global Economy. The X-axis denotes tarrif value (with 1 being trade-restrictive and 0 being free trade) and the Y axis being trade relations (all the edges in the system combined)._
+
+If we draw these two normal disribution, we would get these graphs;
+![Normal Distributions with Cutoff at 0](resources/normal_dist.png)
+_**Figure 3.** Histogram for Normal Distributions N(0.0, 0.15) in the left and N(0.25, 0.15) in the right. Both histograms are clipped at 0 tarrif assuming countries would not subsidize foreign goods (there are some exceptions in real life; eg: Nepal subsidizes farm equipments). 80 countries are used for both histograms._
+
+### Network Structure
+
 
 The trade network visualization shows:
 - Node color: Political bloc membership
@@ -350,17 +410,19 @@ The trade network visualization shows:
 - Edge width: Trade flow volume
 - Edge style: Solid for normal trade, dashed for reciprocal tariff relationships
 
+
+
 **Interpretation:** Look for clustering of nodes by color (political blocs), the formation of trade communities, and the distribution of node sizes. Highly connected nodes usually become wealthier over time.
 
-### 7.2 Economic Indicators
+### 6.2 Economic Indicators
 
-#### 7.2.1 World GDP
+#### 6.2.1 World GDP
 
 The simulation tracks total world GDP over time, comparing the full simulation with the MFA.
 
 **Interpretation:** Divergence between simulation and MFA indicates the importance of network effects. When the lines diverge significantly, it suggests that heterogeneity and network structure have major impacts on economic outcomes.
 
-#### 7.2.2 Poverty Rate
+#### 6.2.2 Poverty Rate
 
 The poverty rate is modeled as being reduced by economic growth:
 
@@ -371,7 +433,7 @@ c.poverty_rate = max(c.poverty_rate * (1 - 0.3 * growth_effect), 0.01)
 
 **Interpretation:** Track how poverty rates respond to policy changes. Countries with higher growth typically see faster poverty reduction, but network effects can lead to uneven results.
 
-#### 7.2.3 Gini Coefficient
+#### 6.2.3 Gini Coefficient
 
 The simulation calculates the Gini coefficient to measure income inequality:
 
@@ -386,7 +448,7 @@ def gini(x):
 
 **Interpretation:** Rising Gini coefficients indicate increasing inequality. Compare the simulation Gini with the MFA Gini to see how network structure affects inequality.
 
-### 7.3 Policy Shock Effects
+### 6.3 Policy Shock Effects
 
 When applying policy shocks (e.g., tariff changes):
 
@@ -396,7 +458,7 @@ When applying policy shocks (e.g., tariff changes):
 - Observe how the shock affects network fragmentation
 - Evaluate changes in global indicators (GDP, poverty, Gini)
 
-### 7.4 Fragmentation Analysis
+### 6.4 Fragmentation Analysis
 
 The simulation measures network fragmentation by removing weak trade links:
 
@@ -411,9 +473,9 @@ comps = nx.number_weakly_connected_components(G_copy)
 
 **Interpretation:** More components indicate a fragmented world economy. High fragmentation often occurs when tariff gaps between blocs are high, representing a world divided into distinct trading communities.
 
-## 8. Technical Implementation Details
+## 7. Technical Implementation Details
 
-### 8.1 Numerical Stability
+### 7.1 Numerical Stability
 
 Several measures ensure numerical stability:
 - GDP values are scaled down during flow calculations: `gdp_u_scaled = c_u.gdp / 1e6`
@@ -421,7 +483,7 @@ Several measures ensure numerical stability:
 - Hard caps on values: `c.gdp = min(c.gdp * (1 + bounded_growth), 1e15)`
 - Minimum values for poverty rates: `c.poverty_rate = max(c.poverty_rate * (1 - 0.3 * growth_effect), 0.01)`
 
-### 8.2 Randomness
+### 7.2 Randomness
 
 Random elements include:
 - Initial country GDP, population, poverty rates
@@ -429,16 +491,16 @@ Random elements include:
 - Trade link formation (probabilistic)
 - Initial tariff rates (drawn from normal distribution)
 
-### 8.3 Performance Considerations
+### 7.3 Performance Considerations
 
 For larger simulations:
 - Edge count grows as O(n²) with country count
 - Computation time scales approximately as O(n² × steps)
 - Memory usage is dominated by the history data structures
 
-## 9. Extensions and Limitations
+## 8. Extensions and Limitations
 
-### 9.1 Possible Extensions
+### 8.1 Possible Extensions
 
 The simulation could be extended to include:
 - More realistic trade models (e.g., Heckscher-Ohlin, New Trade Theory)
@@ -450,7 +512,7 @@ The simulation could be extended to include:
 - Technology diffusion
 - More sophisticated political dynamics
 
-### 9.2 Current Limitations
+### 8.2 Current Limitations
 
 The current model has several limitations:
 - Simplified growth model without production factors
@@ -460,7 +522,7 @@ The current model has several limitations:
 - Stylized rather than realistic political dynamics
 - No inclusion of non-economic factors (culture, institutions)
 
-## 10. Conclusion
+## 9. Conclusion
 
 The Global Trade Simulation provides a flexible platform for exploring the dynamics of international trade, policy shocks, and economic development. Its key strengths are:
 
