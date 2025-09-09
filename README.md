@@ -2,6 +2,7 @@
 
 This project simulates international trade networks and their evolution over time, accounting for geographic distance, political relationships (friendship), tariffs, and transaction costs.
 
+## Deployed App: [https://tradesimulation.streamlit.app/](https://tradesimulation.streamlit.app/)
 ## Key Features
 
 - **Geographic Distance**: Countries located closer to each other have lower transaction costs
